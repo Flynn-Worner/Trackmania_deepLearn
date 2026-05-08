@@ -18,7 +18,7 @@ class TrackmaniaEnv(gym.Env):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, port=8483, ticks_per_step=10):
+    def __init__(self, port=8483, ticks_per_step=25):
         super(TrackmaniaEnv, self).__init__()
         
         self.port = port
@@ -38,10 +38,39 @@ class TrackmaniaEnv(gym.Env):
         blocks_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "map_blocks.json")
         if os.path.exists(blocks_path):
             with open(blocks_path, "r") as f:
-                self.map_blocks = json.load(f)
-            print(f"Loaded {len(self.map_blocks)} map blocks for Generalized Centerline Tracking!")
+                raw_blocks = json.load(f)
+            
+            # Sort the blocks into a topological "Snake" path starting from the Start Line!
+            start_idx = 0
+            for i, b in enumerate(raw_blocks):
+                if 'start' in b['name'].lower():
+                    start_idx = i
+                    break
+                    
+            if raw_blocks:
+                self.map_blocks = [raw_blocks[start_idx]]
+                unvisited = raw_blocks.copy()
+                unvisited.pop(start_idx)
+                
+                # Greedily connect the closest blocks to form the path
+                while unvisited:
+                    last_block = self.map_blocks[-1]["world_center"]
+                    closest_idx = 0
+                    min_d = float('inf')
+                    for i, b in enumerate(unvisited):
+                        center = b["world_center"]
+                        # We use 2D distance for sorting the track path to ignore vertical bumps
+                        d = math.sqrt((last_block["x"] - center["x"])**2 + (last_block["z"] - center["z"])**2)
+                        if d < min_d:
+                            min_d = d
+                            closest_idx = i
+                    self.map_blocks.append(unvisited.pop(closest_idx))
+                    
+            print(f"Loaded and path-sorted {len(self.map_blocks)} map blocks for Spline Progress Tracking!")
         else:
             print("WARNING: map_blocks.json not found! Centerline tracking will not work.")
+            
+        self.highest_block_idx = 0
         
         self.iface = TMInterface(self.port)
         self.connected = False
@@ -151,26 +180,55 @@ class TrackmaniaEnv(gym.Env):
                 # REWARD SYSTEM
                 # ==========================================
                 
-                # 1. Base Reward: Points for simply maintaining high speed
-                reward = state.display_speed * 0.01 
+                # 1. Base Reward: Speed is KING! We must massively reward moving!
+                # 100 km/h = +2.0 reward per frame.
+                reward = state.display_speed * 0.02 
                 
-                # 2. Generalized Centerline Reward / Penalty!
-                # We calculate how far the car is from the closest block center.
                 dist_to_center = 0.0
                 if self.map_blocks:
                     pos = state.position
                     min_dist = float('inf')
-                    for b in self.map_blocks:
+                    closest_idx = 0
+                    
+                    for i, b in enumerate(self.map_blocks):
                         center = b["world_center"]
-                        dist = math.sqrt((pos[0] - center["x"])**2 + (pos[2] - center["z"])**2)
+                        # We use 3D distance to find the absolute closest block
+                        dist = math.sqrt((pos[0] - center["x"])**2 + (pos[1] - center["y"])**2 + (pos[2] - center["z"])**2)
                         if dist < min_dist:
                             min_dist = dist
-                    dist_to_center = min_dist
+                            closest_idx = i
                     
-                    # Trackmania blocks are 32m wide. A distance of > 14m means we are off the road!
-                    if dist_to_center > 14.0:
+                    closest_center = self.map_blocks[closest_idx]["world_center"]
+                    
+                    # We use 3D distance to cleanly catch falling off elevated tracks 
+                    # without falsely triggering on downhill slopes or undulating terrain!
+                    dist_to_center = math.sqrt((pos[0] - closest_center["x"])**2 + (pos[1] - closest_center["y"])**2 + (pos[2] - closest_center["z"])**2)
+                    
+                    # 2. Forward Progress Reward! (The Snake Logic)
+                    # We reward the AI specifically for pushing further down the path!
+                    if closest_idx > self.highest_block_idx:
+                        progress_blocks = closest_idx - self.highest_block_idx
+                        reward += progress_blocks * 5.0  # Massive +5.0 reward for breaking new ground!
+                        self.highest_block_idx = closest_idx
+                        
+                    # 3. Continuous Spline Penalty
+                    # We make this penalty extremely tiny compared to the speed reward.
+                    # We just want to gently 'nudge' the car, not terrify it into holding the brake.
+                    # e.g., 10m away = -0.05 penalty.
+                    reward -= dist_to_center * 0.005
+                    
+                    # 4. Marginal Step Penalty (Time Penalty)
+                    # This gently bleeds points to encourage the AI to finish the race quickly 
+                    # rather than driving in circles to farm speed points.
+                    reward -= 0.1
+                    
+                    # 5. Out of Bounds Detection!
+                    # Trackmania blocks are 32m wide. The absolute farthest corner is 22.6m away. 
+                    # If 3D distance > 24m, the car has completely fallen off the snake track!
+                    if dist_to_center > 24.0:
                         reward -= 50.0
                         terminated = True
+                        print(f"Fell off! 3D Dist to center: {dist_to_center:.1f}m")
                 
                 # 3. Crash Penalty: Detect massive speed loss (hitting a wall)
                 speed_drop = self.previous_speed - state.display_speed
@@ -184,9 +242,10 @@ class TrackmaniaEnv(gym.Env):
                 else:
                     self.consecutive_stuck_steps = 0
                     
-                if self.consecutive_stuck_steps >= 10: # 50 steps @ 10Hz = 5 seconds
+                if self.consecutive_stuck_steps >= 50: # 50 steps @ 10Hz = 5 seconds
                     reward -= 50.0     # MASSIVE penalty for sitting still
                     terminated = True  # Terminate and force a reset
+                    # print("Stuck penalty triggered!")
                 
                 self.previous_speed = state.display_speed
                 # ==========================================
@@ -225,9 +284,9 @@ class TrackmaniaEnv(gym.Env):
         # Give up to reset the car to the starting line
         self.iface.give_up()
         
-        # Wait for the game to process the reset, enter the countdown (-3000ms to 0ms), 
-        # and then give us the very first frame of the actual race.
-        seen_countdown = False
+        # Wait for the game to process the reset.
+        first_frame = True
+        prev_time = -1
         while True:
             msgtype = self.iface._read_int32()
             if msgtype == int(MessageType.SC_RUN_STEP_SYNC):
@@ -237,17 +296,32 @@ class TrackmaniaEnv(gym.Env):
                 # ALWAYS respond to avoid deadlocking the game engine!
                 self.iface._respond_to_call(msgtype)
                 
-                # If we see a negative time, we know the reset worked and we are in the countdown
-                if _time < 0:
-                    seen_countdown = True
-                
-                # Once we've seen the countdown, wait for time to hit 0 (the "GO!" signal)
-                if seen_countdown and _time >= 0:
+                # If time is exactly 0, the race has officially started!
+                if _time == 0:
                     obs = self._get_observation(state)
                     self.current_state = state
                     self.previous_speed = 0.0
                     self.consecutive_stuck_steps = 0
+                    self.highest_block_idx = 0
                     break
+                
+                # On the very first frame, we just record the time and wait.
+                if first_frame:
+                    prev_time = _time
+                    first_frame = False
+                    continue
+                
+                # If time drops massively (e.g. 5000 down to 100), the reset happened!
+                # This catches maps with no countdown where time never hits exactly 0.
+                if _time > 0 and _time < prev_time - 100:
+                    obs = self._get_observation(state)
+                    self.current_state = state
+                    self.previous_speed = 0.0
+                    self.consecutive_stuck_steps = 0
+                    self.highest_block_idx = 0
+                    break
+                    
+                prev_time = _time
             else:
                 self.iface._respond_to_call(msgtype)
 

@@ -28,7 +28,8 @@ def extract_map_blocks(gbx_path, output_path):
         # Ignore purely decorative blocks or grass (keep road/tech)
         # Often block names are like 'RoadTechStraight', 'RoadDirtCurve3', 'ArenaStart'
         name = b.name.lower()
-        if 'road' not in name and 'start' not in name and 'finish' not in name and 'checkpoint' not in name:
+        valid_words = ['road', 'start', 'finish', 'checkpoint', 'circuit']
+        if not any(word in name for word in valid_words):
             # We skip decorative scenery for the centerline calculation
             continue
             

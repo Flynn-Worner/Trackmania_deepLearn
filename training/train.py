@@ -12,26 +12,27 @@ def main():
     print("Initializing environment...")
     
     # We use a lower ticks_per_step (10 = 10 updates a second) 
-    env = TrackmaniaEnv(port=8483, ticks_per_step=10)
+    env = TrackmaniaEnv(port=8483)
     
     print("Skipping check_env as it can crash synchronous game environments...")
     
-    save_path = "models/saved/ppo_trackmania_generalized"
+    save_path = "models/saved/ppo_trackmania_final"
     
     if os.path.exists(save_path + ".zip"):
         print(f"\nLoading existing model from {save_path}.zip to resume training...")
         model = PPO.load(save_path, env=env, tensorboard_log="./tensorboard/")
     else:
         print("\nCreating new PPO Agent...")
-        # We use MlpPolicy since our observations are just 7 floats
-        # n_steps is set relatively low for faster updates during testing
+        # n_steps: How many frames to collect before updating the brain (2048 is standard)
+        # ent_coef: High entropy forces the AI to explore randomly instead of getting stuck!
         model = PPO(
             "MlpPolicy", 
             env, 
             verbose=1, 
             learning_rate=0.0003, 
-            n_steps=1024, 
+            n_steps=2048, 
             batch_size=64,
+            ent_coef=0.05,
             tensorboard_log="./tensorboard/"
         )
     
