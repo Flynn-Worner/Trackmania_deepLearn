@@ -16,7 +16,7 @@ def main():
     
     print("Skipping check_env as it can crash synchronous game environments...")
     
-    save_path = "models/saved/ppo_trackmania_basic"
+    save_path = "models/saved/ppo_trackmania_generalized"
     
     if os.path.exists(save_path + ".zip"):
         print(f"\nLoading existing model from {save_path}.zip to resume training...")

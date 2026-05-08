@@ -6,6 +6,8 @@ from .tminterface2 import TMInterface, MessageType
 
 import sys
 import os
+import json
+import math
 # Ensure root is in path so we can import data_processing
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_processing.features import StateNormalizer
@@ -26,8 +28,20 @@ class TrackmaniaEnv(gym.Env):
         # 0: Do nothing, 1: Accelerate, 2: Brake, 3: Left, 4: Right, 5: Accel+Left, 6: Accel+Right
         self.action_space = spaces.Discrete(7)
         
-        # State space: [speed, x, y, z, yaw, pitch, roll] 
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
+        # We removed Absolute GPS Coordinates (X,Y,Z).
+        # We added Distance to Centerline.
+        # Observation is now 6 floats: [speed, dist_to_center, yaw, pitch, roll, checkpoints_hit]
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
+        
+        # Load the extracted map blocks for the centerline!
+        self.map_blocks = []
+        blocks_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "map_blocks.json")
+        if os.path.exists(blocks_path):
+            with open(blocks_path, "r") as f:
+                self.map_blocks = json.load(f)
+            print(f"Loaded {len(self.map_blocks)} map blocks for Generalized Centerline Tracking!")
+        else:
+            print("WARNING: map_blocks.json not found! Centerline tracking will not work.")
         
         self.iface = TMInterface(self.port)
         self.connected = False
@@ -65,11 +79,33 @@ class TrackmaniaEnv(gym.Env):
             print("Successfully connected and synced to the game environment!")
 
     def _get_observation(self, state):
-        """Converts the raw TMInterface SimStateData into our observation space array."""
+        """Converts the raw TMInterface SimStateData into our generalized observation space array."""
         speed = state.display_speed
         pos = state.position
         yaw, pitch, roll = state.yaw_pitch_roll
-        raw_obs = np.array([speed, pos[0], pos[1], pos[2], yaw, pitch, roll], dtype=np.float32)
+        
+        checkpoints = state.cp_data.cp_times_length if state.cp_data else 0
+        
+        # Find closest block distance
+        min_dist = 0.0
+        if self.map_blocks:
+            min_dist = float('inf')
+            for b in self.map_blocks:
+                center = b["world_center"]
+                dist = math.sqrt((pos[0] - center["x"])**2 + (pos[2] - center["z"])**2)
+                if dist < min_dist:
+                    min_dist = dist
+                    
+        # Notice how X, Y, Z coordinates are completely GONE!
+        # The bot must learn using only speed, distance to center, and angles!
+        raw_obs = np.array([
+            float(speed), 
+            float(min_dist), 
+            float(yaw), 
+            float(pitch), 
+            float(roll),
+            float(checkpoints)
+        ], dtype=np.float32)
         
         # Pass through the normalizer before giving it to the neural network
         return self.normalizer.normalize(raw_obs)
@@ -118,10 +154,28 @@ class TrackmaniaEnv(gym.Env):
                 # 1. Base Reward: Points for simply maintaining high speed
                 reward = state.display_speed * 0.01 
                 
-                # 2. Crash Penalty: Detect massive speed loss (hitting a wall)
+                # 2. Generalized Centerline Reward / Penalty!
+                # We calculate how far the car is from the closest block center.
+                dist_to_center = 0.0
+                if self.map_blocks:
+                    pos = state.position
+                    min_dist = float('inf')
+                    for b in self.map_blocks:
+                        center = b["world_center"]
+                        dist = math.sqrt((pos[0] - center["x"])**2 + (pos[2] - center["z"])**2)
+                        if dist < min_dist:
+                            min_dist = dist
+                    dist_to_center = min_dist
+                    
+                    # Trackmania blocks are 32m wide. A distance of > 14m means we are off the road!
+                    if dist_to_center > 14.0:
+                        reward -= 50.0
+                        terminated = True
+                
+                # 3. Crash Penalty: Detect massive speed loss (hitting a wall)
                 speed_drop = self.previous_speed - state.display_speed
                 if speed_drop > 50.0:  # Lost 50+ km/h in just 0.1 seconds
-                    reward -= 5.0      # VERY SMALL penalty (don't make it terrified to drive)
+                    reward -= 50.0     # Heavy penalty
                     terminated = True  # Terminate and force a reset
                     
                 # 3. Stuck Penalty: Detect if the car is stopped/stuck for too long
@@ -130,7 +184,7 @@ class TrackmaniaEnv(gym.Env):
                 else:
                     self.consecutive_stuck_steps = 0
                     
-                if self.consecutive_stuck_steps >= 50: # 50 steps @ 10Hz = 5 seconds
+                if self.consecutive_stuck_steps >= 10: # 50 steps @ 10Hz = 5 seconds
                     reward -= 50.0     # MASSIVE penalty for sitting still
                     terminated = True  # Terminate and force a reset
                 

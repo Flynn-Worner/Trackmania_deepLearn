@@ -1,0 +1,58 @@
+[
+    {
+        "name": "StadiumRoadMainStartLine",
+        "grid": {
+            "x": 16,
+            "y": 3,
+            "z": 16
+        },
+        "world_center": {
+            "x": 528.0,
+            "y": 24.0,
+            "z": 528.0
+        },
+        "rotation": 2
+    },
+    {
+        "name": "StadiumRoadMain",
+        "grid": {
+            "x": 26,
+            "y": 2,
+            "z": 11
+        },
+        "world_center": {
+            "x": 848.0,
+            "y": 16.0,
+            "z": 368.0
+        },
+        "rotation": 0
+    },
+    {
+        "name": "StadiumRoadMain",
+        "grid": {
+            "x": 26,
+            "y": 2,
+            "z": 9
+        },
+        "world_center": {
+            "x": 848.0,
+            "y": 16.0,
+            "z": 304.0
+        },
+        "rotation": 0
+    },
+    {
+        "name": "StadiumRoadMainFinishLine",
+        "grid": {
+            "x": 16,
+            "y": 3,
+            "z": 30
+        },
+        "world_center": {
+            "x": 528.0,
+            "y": 24.0,
+            "z": 976.0
+        },
+        "rotation": 0
+    }
+]
