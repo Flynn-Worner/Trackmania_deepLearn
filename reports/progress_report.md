@@ -25,8 +25,8 @@ The project is structured into the following key components:
 - [x] Initialized Git repository.
 - [x] Created project folder structure (`interfacing`, `data_processing`, `models`, `training`, `utils`, `reports`).
 - [x] Established non-visual data strategy to expedite training.
-- [ ] Define the specific memory addresses/telemetry variables to extract.
-- [ ] Implement `memory_reader.py` to successfully hook into the TMNF process.
+- [x] Define the specific memory addresses/telemetry variables to extract.
+- [x] Implement `memory_reader.py` to successfully hook into the TMNF process via Socket Plugins.
 
 ### Phase 2: Environment and Data
 - [ ] Develop the Gym-compatible environment (`game_env.py`).
