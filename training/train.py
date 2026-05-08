@@ -14,27 +14,26 @@ def main():
     # We use a lower ticks_per_step (10 = 10 updates a second) 
     env = TrackmaniaEnv(port=8483, ticks_per_step=10)
     
-    print("Checking environment compatibility with Stable Baselines 3...")
-    try:
-        check_env(env)
-        print("Environment passes Gymnasium compatibility checks!")
-    except Exception as e:
-        print(f"Environment check failed: {e}")
-        # We will continue anyway, sometimes check_env is too strict
-        pass
+    print("Skipping check_env as it can crash synchronous game environments...")
     
-    print("\nCreating PPO Agent...")
-    # We use MlpPolicy since our observations are just 7 floats
-    # n_steps is set relatively low for faster updates during testing
-    model = PPO(
-        "MlpPolicy", 
-        env, 
-        verbose=1, 
-        learning_rate=0.0003, 
-        n_steps=1024, 
-        batch_size=64,
-        tensorboard_log="./tensorboard/"
-    )
+    save_path = "models/saved/ppo_trackmania_basic"
+    
+    if os.path.exists(save_path + ".zip"):
+        print(f"\nLoading existing model from {save_path}.zip to resume training...")
+        model = PPO.load(save_path, env=env, tensorboard_log="./tensorboard/")
+    else:
+        print("\nCreating new PPO Agent...")
+        # We use MlpPolicy since our observations are just 7 floats
+        # n_steps is set relatively low for faster updates during testing
+        model = PPO(
+            "MlpPolicy", 
+            env, 
+            verbose=1, 
+            learning_rate=0.0003, 
+            n_steps=1024, 
+            batch_size=64,
+            tensorboard_log="./tensorboard/"
+        )
     
     print("\n=======================================================")
     print("STARTING TRAINING! (Press Ctrl+C in terminal to stop)")
@@ -42,14 +41,13 @@ def main():
     print("Ensure TMInterface is running in TMNF and you are on a track.")
     
     try:
-        # Train for a small number of timesteps as an initial test
-        model.learn(total_timesteps=10000, tb_log_name="PPO_First_Test")
+        # Train for a large number of timesteps! (It will run until you press Ctrl+C)
+        model.learn(total_timesteps=500000, tb_log_name="PPO_Training", reset_num_timesteps=False)
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
     finally:
         # Always save the model
         os.makedirs("models/saved", exist_ok=True)
-        save_path = "models/saved/ppo_trackmania_basic"
         model.save(save_path)
         print(f"\nModel saved to {save_path}.zip")
         env.close()
