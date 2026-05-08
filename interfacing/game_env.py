@@ -121,9 +121,8 @@ class TrackmaniaEnv(gym.Env):
                 # 2. Crash Penalty: Detect massive speed loss (hitting a wall)
                 speed_drop = self.previous_speed - state.display_speed
                 if speed_drop > 50.0:  # Lost 50+ km/h in just 0.1 seconds
-                    reward -= 50.0     # Heavy penalty
+                    reward -= 5.0      # VERY SMALL penalty (don't make it terrified to drive)
                     terminated = True  # Terminate and force a reset
-                    # print(f"CRASH! Lost {speed_drop:.1f} km/h. Resetting...")
                     
                 # 3. Stuck Penalty: Detect if the car is stopped/stuck for too long
                 if state.display_speed < 10.0:
@@ -132,9 +131,8 @@ class TrackmaniaEnv(gym.Env):
                     self.consecutive_stuck_steps = 0
                     
                 if self.consecutive_stuck_steps >= 50: # 50 steps @ 10Hz = 5 seconds
-                    reward -= 10.0     # Medium penalty
+                    reward -= 50.0     # MASSIVE penalty for sitting still
                     terminated = True  # Terminate and force a reset
-                    # print("STUCK! Speed under 10 km/h for 5s. Resetting...")
                 
                 self.previous_speed = state.display_speed
                 # ==========================================
