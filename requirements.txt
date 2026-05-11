@@ -1,4 +1,6 @@
+stable-baselines3
 tminterface
 gymnasium
 numpy
 torch
+pygbx

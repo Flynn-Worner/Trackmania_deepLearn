@@ -1,67 +1,201 @@
 import os
 import sys
 
-# Ensure root is in path so we can import interfacing
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from interfacing.game_env import TrackmaniaEnv
+import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
+from stable_baselines3.common.callbacks import BaseCallback
 
-def make_env(port):
-    """Utility function to create an environment for a specific port."""
+from interfacing.game_env import TrackmaniaEnv
+
+
+# ---------------------------------------------------------------------------
+# Custom callback: logs episode metrics to TensorBoard frequently so you
+# don't have to wait for a full n_steps rollout before seeing any data.
+# ---------------------------------------------------------------------------
+
+class TrainingMetricsCallback(BaseCallback):
+    """
+    Accumulates per-episode reward/length across all parallel envs and writes
+    them to TensorBoard every `log_freq` env steps.  This means TB updates
+    arrive every few minutes in debug mode rather than after a full rollout.
+    """
+
+    def __init__(self, log_freq: int = 200, verbose: int = 0):
+        super().__init__(verbose)
+        self.log_freq = log_freq
+        self._ep_rew_buf = []
+        self._ep_len_buf = []
+        self._cur_rew = {}
+        self._cur_len = {}
+
+    def _on_step(self) -> bool:
+        rewards = self.locals.get("rewards", [])
+        dones = self.locals.get("dones", [])
+        infos = self.locals.get("infos", [{}] * len(rewards))
+
+        for idx, (r, d, info) in enumerate(zip(rewards, dones, infos)):
+            self._cur_rew[idx] = self._cur_rew.get(idx, 0.0) + float(r)
+            self._cur_len[idx] = self._cur_len.get(idx, 0) + 1
+            if d:
+                self._ep_rew_buf.append(self._cur_rew[idx])
+                self._ep_len_buf.append(self._cur_len[idx])
+                self._cur_rew[idx] = 0.0
+                self._cur_len[idx] = 0
+
+        if self.n_calls % self.log_freq == 0 and self._ep_rew_buf:
+            window = self._ep_rew_buf[-20:]
+            self.logger.record("custom/mean_ep_reward_20", float(np.mean(window)))
+            self.logger.record("custom/mean_ep_length_20", float(np.mean(self._ep_len_buf[-20:])))
+            self.logger.record("custom/n_episodes", len(self._ep_rew_buf))
+            self.logger.dump(self.num_timesteps)
+
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Env factory
+# ---------------------------------------------------------------------------
+
+def make_env(port: int):
     def _init():
         return TrackmaniaEnv(port=port)
     return _init
 
-def main():
-    # LIST OF PORTS: You must open a Trackmania window and TMInterface for EACH of these ports.
-    # We are reverting back to 1 instance to avoid connection issues.
-    PORTS = [8483]
-    
-    print(f"Initializing {len(PORTS)} parallel environments...")
-    
-    # Wrap multiple environments in parallel processes
-    env = SubprocVecEnv([make_env(p) for p in PORTS])
-    
-    print("Skipping check_env as it can crash synchronous game environments...")
-    
-    save_path = "models/saved/ppo_trackmania_final"
-    
-    if os.path.exists(save_path + ".zip"):
-        print(f"\nLoading existing model from {save_path}.zip to resume training...")
-        model = PPO.load(save_path, env=env, tensorboard_log="./tensorboard/")
+
+# ---------------------------------------------------------------------------
+# Main training function – called by main.py or directly
+# ---------------------------------------------------------------------------
+
+def run_training(
+    ports=None,
+    total_timesteps: int = 500_000,
+    tensorboard_dir: str = "./tensorboard/",
+    model_path: str = "models/saved/ppo_trackmania_final",
+    debug: bool = False,
+    force_new: bool = False,
+):
+    """
+    Train the PPO agent.
+
+    Parameters
+    ----------
+    ports : list[int]
+        One TMInterface port per running TM window.  Defaults to [8483].
+    total_timesteps : int
+        How many env steps to train for.
+    tensorboard_dir : str
+        Absolute path is strongly recommended; relative paths resolve from cwd.
+    model_path : str
+        Save/load path without .zip extension.
+    debug : bool
+        Use smaller n_steps (128) so TensorBoard updates are visible within
+        a couple of minutes.  Switch off for production runs.
+    force_new : bool
+        Ignore any existing checkpoint and create a fresh model.
+    """
+    if ports is None:
+        ports = [8483]
+
+    # Hyper-parameters: debug mode uses small n_steps so you see TB data fast.
+    n_steps = 128 if debug else 2048
+    batch_size = 64 if debug else 256
+    log_freq = 50 if debug else 200
+
+    print(f"Initializing {len(ports)} environment(s) on port(s) {ports} ...")
+    raw_env = SubprocVecEnv([make_env(p) for p in ports])
+
+    # VecNormalize: online running mean/std for observations AND rewards.
+    # This is critical for continuous-action PPO stability.
+    # Stats are saved alongside the model so inference can reproduce them.
+    env = VecNormalize(
+        raw_env,
+        norm_obs=True,
+        norm_reward=True,
+        clip_obs=10.0,
+        clip_reward=20.0,
+    )
+
+    os.makedirs(os.path.dirname(os.path.abspath(model_path)), exist_ok=True)
+    vecnorm_path = model_path + "_vecnorm.pkl"
+
+    if not force_new and os.path.exists(model_path + ".zip"):
+        print(f"Loading existing model from {model_path}.zip ...")
+        model = PPO.load(model_path, env=env, tensorboard_log=tensorboard_dir)
+        if os.path.exists(vecnorm_path):
+            env = VecNormalize.load(vecnorm_path, raw_env)
+            env.training = True
+            model.set_env(env)
+            print(f"VecNormalize stats loaded from {vecnorm_path}")
     else:
-        print("\nCreating new PPO Agent...")
-        # n_steps: How many frames to collect before updating the brain (2048 is standard)
-        # ent_coef: High entropy forces the AI to explore randomly instead of getting stuck!
+        print("Creating new PPO model ...")
         model = PPO(
-            "MlpPolicy", 
-            env, 
-            verbose=1, 
-            learning_rate=0.0003, 
-            n_steps=2048, 
-            batch_size=64,
+            "MlpPolicy",
+            env,
+            verbose=1,
+            # Learning rate: small but stable for noisy game envs.
+            learning_rate=3e-4,
+            # n_steps: collect this many steps per env before each update.
+            # 128 in debug makes TB feel alive; 2048 is standard production.
+            n_steps=n_steps,
+            batch_size=batch_size,
+            # More epochs per update improves sample efficiency.
+            n_epochs=10,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=0.2,
+            # Entropy coefficient: keeps exploration alive early on.
             ent_coef=0.01,
-            tensorboard_log="./tensorboard/"
+            vf_coef=0.5,
+            max_grad_norm=0.5,
+            # Wider networks handle the nonlinear reward landscape better.
+            policy_kwargs={"net_arch": [dict(pi=[256, 256], vf=[256, 256])]},
+            tensorboard_log=tensorboard_dir,
         )
-    
-    print("\n=======================================================")
-    print("STARTING TRAINING! (Press Ctrl+C in terminal to stop)")
-    print("=======================================================")
-    print("Ensure TMInterface is running in TMNF and you are on a track.")
-    
+
+    callback = TrainingMetricsCallback(log_freq=log_freq)
+
+    print()
+    print("=" * 56)
+    print("  TRAINING STARTED  (Ctrl+C to stop and save)")
+    print(f"  n_steps per env : {n_steps}")
+    print(f"  batch_size      : {batch_size}")
+    print(f"  TensorBoard dir : {tensorboard_dir}")
+    print("=" * 56)
+    print()
+    print("Steering note: the policy outputs a continuous value in [-1, 1]")
+    print("which is linearly mapped to TM's integer steer range [-65536, 65536].")
+    print("Gas and brake remain binary (game API limitation).")
+    print()
+
     try:
-        # Train for a large number of timesteps! (It will run until you press Ctrl+C)
-        model.learn(total_timesteps=500000, tb_log_name="PPO_Training", reset_num_timesteps=False)
+        model.learn(
+            total_timesteps=total_timesteps,
+            tb_log_name="PPO_Training",
+            reset_num_timesteps=False,
+            callback=callback,
+            progress_bar=False,
+        )
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
     finally:
-        # Always save the model
-        os.makedirs("models/saved", exist_ok=True)
-        model.save(save_path)
-        print(f"\nModel saved to {save_path}.zip")
+        model.save(model_path)
+        env.save(vecnorm_path)
+        print(f"\nModel saved        → {model_path}.zip")
+        print(f"VecNormalize stats → {vecnorm_path}")
         env.close()
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible direct execution: python training/train.py
+# ---------------------------------------------------------------------------
+
+def main():
+    """Direct execution entry point (single env, default port 8483)."""
+    run_training()
+
 
 if __name__ == "__main__":
     main()

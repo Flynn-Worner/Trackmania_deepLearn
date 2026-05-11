@@ -1,3 +1,29 @@
+/**
+ * Python Link – Openplanet plugin for TMInterface 2.1.x
+ *
+ * Sets up a TCP socket server so Python's TrackmaniaEnv can drive the car.
+ *
+ * PORT CONFIGURATION (required for multiple parallel TM instances):
+ *
+ *   The port is read from a TMInterface variable "custom_port" so each game
+ *   window can listen on a different port without editing this file.
+ *
+ *   Option A – TMLoader (automated launch, recommended):
+ *     When launching via TMLoader pass a configstring:
+ *       run TmForever "default" /configstring="set custom_port 8484"
+ *     reference_linesight/scripts/train.py demonstrates this.
+ *
+ *   Option B – Manual launch (default port 8483):
+ *     Just load the map.  The plugin defaults to port 8483.
+ *     To use a different port, type in the TMInterface console BEFORE the
+ *     map loads (i.e. while still in the main menu):
+ *       set custom_port 8484
+ *     Then load the map.  The plugin reads the variable during Main().
+ *
+ *   Python side: pass matching ports to TrackmaniaEnv(port=...) and list
+ *   them in main.py --ports or training/train.py PORTS.
+ */
+
 Net::Socket@ sock = null;
 Net::Socket@ clientSock = null;
 
@@ -40,7 +66,7 @@ auto@ simManager = GetSimulationManager();
 void Init_Socket(){
     if (@sock is null) {
         @sock = Net::Socket();
-        log("Port set to "+PORT);
+        log("Port set to " + PORT);
         sock.Listen(HOST, PORT);
     }
 }
@@ -139,7 +165,7 @@ int HandleMessage()
                 SimulationState state(stateData);
                 simManager.RewindToState(state);
             }
-            break;            
+            break;
         }
 
         case MessageType::CRewindToCurrentState: {
@@ -176,6 +202,7 @@ int HandleMessage()
             if (simManager.InRace) {
                 simManager.SetInputState(InputType::Up, accelerate?1:0);
                 simManager.SetInputState(InputType::Down, brake?1:0);
+                // Steer is an integer in [-65536, 65536].  Negative = left, positive = right.
                 simManager.SetInputState(InputType::Left, steer < 0 ? -steer : 0);
                 simManager.SetInputState(InputType::Right, steer > 0 ? steer : 0);
             }
@@ -318,11 +345,29 @@ void OnConnect(){
     WaitForResponse(MessageType::SCOnConnectSync);
 }
 
-void Main()
+/**
+ * Called after the CommandList processes "queue_processed".
+ * By this point RegisterVariable has run, so GetVariableDouble returns the
+ * value set by /configstring (auto-launch) or by the user in the console.
+ */
+void OnQueueProcessed(int fromTime, int toTime, const string&in commandLine, const array<string>&in args)
 {
-    PORT = 8483;
+    PORT = uint16(GetVariableDouble("custom_port"));
     log("Port set to " + PORT);
     Init_Socket();
+}
+
+void Main()
+{
+    // Default port 8483.  Override before map load by running in TMInterface
+    // console:  set custom_port 8484
+    // Or via TMLoader configstring:  /configstring="set custom_port 8484"
+    RegisterVariable("custom_port", 8483);
+    RegisterCustomCommand("queue_processed", "Internal command", OnQueueProcessed);
+
+    CommandList cmdList;
+    cmdList.Content = "queue_processed";
+    cmdList.Process();
 }
 
 void OnGameStateChanged(TM::GameState state){
