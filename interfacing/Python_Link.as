@@ -15,13 +15,11 @@
  *   NOTE: start ALL TM instances before running main.py, so every port
  *   is bound before Python tries to connect.
  *
- * METHOD 2 – TMLoader configstring (automated launch):
- *   run TmForever "profile" /configstring="set custom_port 8484"
- *   See scripts/launch_multienv.ps1 for an automated version.
+ * METHOD 2 – scripts/launch_multienv.ps1 (sequential auto-patching):
+ *   Patches the plugin with a specific port, launches TM, waits, repeats.
+ *   Use this only if the try/catch auto-scan does not work on your build.
  *
- * METHOD 3 – Manual sequential launch (see MULTI_INSTANCE_GUIDE.md):
- *   Run scripts/launch_multienv.ps1, which patches the port, launches
- *   TM, waits, then repeats for each instance.
+ * See MULTI_INSTANCE_GUIDE.md for full instructions.
  * =========================================================================
  */
 
@@ -347,25 +345,10 @@ void OnConnect(){
 }
 
 /**
- * Called after the CommandList processes "queue_processed".
- * By this point RegisterVariable has run, so GetVariableDouble returns the
- * value set by /configstring (auto-launch) or by the user in the console.
- * Only used when custom_port was explicitly set to non-zero.
- */
-void OnQueueProcessed(int fromTime, int toTime, const string&in commandLine, const array<string>&in args)
-{
-    double cfg = GetVariableDouble("custom_port");
-    if (cfg > 0) {
-        PORT = uint16(cfg);
-        log("Port set from custom_port variable: " + PORT);
-        Init_Socket();
-    }
-    // If cfg == 0, Main() falls through to the auto-scan below.
-}
-
-/**
- * Try to bind a specific port.  Returns true on success, false if the port
- * is already in use by another TM instance or another application.
+ * Try to bind a specific port.
+ * Returns true on success, false if the port is already taken.
+ *
+ * The try/catch is essential: without it, a failed Listen crashes the plugin.
  */
 bool TryBindPort(uint16 p)
 {
@@ -380,39 +363,40 @@ bool TryBindPort(uint16 p)
     }
 }
 
+/**
+ * Main() – pure auto-scan, no RegisterVariable / CommandList.
+ *
+ * WHY no RegisterVariable:
+ *   TMInterface persists variable values between sessions to disk.
+ *   The old OnQueueProcessed pattern relied on RegisterVariable("custom_port"),
+ *   but the CommandList fires ASYNCHRONOUSLY (after Main() completes), so it
+ *   ran AFTER the auto-scan had already claimed a port.  Worse, if a previous
+ *   session had written a value like 8484 to the variable store, every new
+ *   instance would read that stale value and re-bind to 8484, overriding the
+ *   scan result — producing the bug where every instance claimed port 8484.
+ *
+ * HOW multi-instance works now:
+ *   Open TM windows one at a time.  Each calls Main() and tries 8483 first.
+ *   Instance 1 succeeds → binds 8483.
+ *   Instance 2 finds 8483 taken → tries 8484 → succeeds.
+ *   Instance 3 → 8485, and so on up to 8492.
+ *   Python side: python main.py --ports 8483 8484 8485
+ */
 void Main()
 {
-    // Register the variable so TMLoader configstrings can override it.
-    // Default 0 means "auto-scan".
-    RegisterVariable("custom_port", 0);
-    RegisterCustomCommand("queue_processed", "Internal command", OnQueueProcessed);
-
-    CommandList cmdList;
-    cmdList.Content = "queue_processed";
-    cmdList.Process();
-
-    // If a configstring already set custom_port the socket is already bound.
-    if (@sock !is null) {
-        return;
-    }
-
-    // AUTO-SCAN: try ports 8483–8492 in order and bind to the first free one.
-    // Each TM instance will claim the next available port, so:
-    //   Instance 1 → 8483, Instance 2 → 8484, Instance 3 → 8485, …
-    // Start all TM windows before running main.py.
     bool bound = false;
     for (uint16 p = 8483; p <= 8492; p++) {
         if (TryBindPort(p)) {
-            log("Python Link: auto-bound to port " + PORT);
+            log("Python Link: listening on port " + PORT);
             bound = true;
             break;
         }
-        log("Port " + p + " in use, trying next...");
+        log("Python Link: port " + p + " busy, trying " + (p + 1) + "...");
     }
 
     if (!bound) {
-        log("Python Link ERROR: could not bind to any port in 8483-8492. "
-            "Close other applications using those ports.");
+        log("Python Link ERROR: no free port in 8483-8492. "
+            "Close other applications using those ports and reload the plugin.");
     }
 }
 

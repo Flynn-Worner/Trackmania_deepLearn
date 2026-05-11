@@ -56,6 +56,11 @@ class TrackmaniaEnv(gym.Env):
     # 5× means the car reaches driving speed ~5× faster in wall-clock time.
     WARMUP_SPEED_MULT = 5.0
 
+    # The stadium track surface in TMNF sits at approximately 26 m in world Y.
+    # Spawning 1 m above it avoids the car clipping through the road mesh.
+    # Increase this constant if the car spawns underground on your map.
+    TRACK_SURFACE_Y = 26.0
+
     def __init__(self, port: int = 8483, ticks_per_step: int = 25):
         super().__init__()
 
@@ -277,39 +282,52 @@ class TrackmaniaEnv(gym.Env):
                 _time = self.iface._read_int32()
                 state = self.iface.get_simulation_state()
 
-                # 1. Speed reward – linear so it does not dwarf other signals.
-                speed_factor = state.display_speed / 150.0
-                reward += speed_factor * 1.0
+                # ----------------------------------------------------------
+                # REWARD DESIGN RATIONALE
+                # At 150 km/h (~41.7 m/s, ticks_per_step=25 → ~10 Hz):
+                #   speed reward  = 150/300 * 0.5           = +0.25 / step
+                #   progress      = 4.17 m * 0.05           = +0.21 / step
+                # The two signals are now roughly equal so the agent must
+                # actually advance along the track, not just spin in place.
+                # ----------------------------------------------------------
+
+                # 1. Speed reward – encourages driving fast, capped at 0.5/step.
+                reward += (state.display_speed / 300.0) * 0.5
 
                 dist_to_center = 0.0
                 if self.map_blocks:
                     pos = state.position
                     closest_idx, dist_to_center = self._closest_block_idx(pos)
 
-                    # 2. Arc-length progress reward (metres advanced this step).
+                    # 2. Arc-length progress – reward each new metre of track
+                    #    conquered.  Only fires when reaching a new maximum so
+                    #    driving backwards gives nothing.
                     current_arc = self.arc_lengths[closest_idx]
                     if current_arc > self.highest_arc_length:
-                        reward += (current_arc - self.highest_arc_length) * 0.015
+                        reward += (current_arc - self.highest_arc_length) * 0.05
                         self.highest_arc_length = current_arc
 
-                    # 3. Mild centerline nudge.
-                    reward -= dist_to_center * 0.001
+                    # 3. Centerline penalty – kept small; just nudges the car
+                    #    toward the middle rather than hugging walls.
+                    reward -= dist_to_center * 0.003
 
-                    # 4. Per-step time penalty.
+                    # 4. Per-step time penalty – prefer finishing quickly.
                     reward -= 0.005
 
-                    # 5. Fell off elevated track.
+                    # 5. Fell off elevated track (Y well below surface).
                     if pos[1] < 20.0:
                         reward -= 10.0
                         terminated = True
 
-                # 6. Crash: sudden large speed loss.
+                # 6. Crash: large sudden speed drop from hitting a wall.
+                #    Threshold is 60 km/h (was 50) to avoid false positives
+                #    during tp-spawn landings at lower speeds.
                 speed_drop = self.previous_speed - state.display_speed
-                if speed_drop > 50.0:
+                if speed_drop > 60.0:
                     reward -= 10.0
                     terminated = True
 
-                # 7. Stuck at near-zero speed.
+                # 7. Stuck: near-zero speed for too long.
                 if state.display_speed < 10.0:
                     self.consecutive_stuck_steps += 1
                 else:
@@ -385,12 +403,16 @@ class TrackmaniaEnv(gym.Env):
 
         block = self.map_blocks[spawn_idx]
         x = block["world_center"]["x"]
-        # Lift 1.5 m above block centre so the car doesn't clip through the
-        # road surface (blocks are measured to their geometric centre, not top).
-        y = block["world_center"]["y"] + 1.5
+        # Always spawn 1 m above the known track surface height rather than
+        # trying to derive Y from block grid coords (which gives the geometric
+        # centre of the block, not the driveable surface).
+        # TRACK_SURFACE_Y ≈ 26 m in the default TMNF stadium environment.
+        y = self.TRACK_SURFACE_Y + 1.0
         z = block["world_center"]["z"]
 
-        # Teleport: 'tp X Y Z' is a standard TMInterface console command.
+        # 'tp X Y Z' is a standard TMInterface console command.
+        # The car keeps its current orientation (facing direction from start
+        # line), which adds orientation diversity to the curriculum.
         self.iface.execute_command(f"tp {x:.3f} {y:.3f} {z:.3f}")
 
         # Warm-up steps: 1–25 steps (minimum 1 so physics processes the tp).
