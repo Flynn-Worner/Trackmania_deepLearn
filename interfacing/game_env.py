@@ -308,6 +308,11 @@ class TrackmaniaEnv(gym.Env):
             float(checkpoints) / 20.0,
         ], dtype=np.float32)
 
+        # Guard against NaN/Inf from bad game states (e.g. during race restart).
+        # Without this, a single bad frame permanently corrupts VecNormalize's
+        # running mean/std, causing the 'invalid value encountered' RuntimeWarning.
+        raw_obs = np.nan_to_num(raw_obs, nan=0.0, posinf=5.0, neginf=-5.0)
+
         return self.normalizer.normalize(raw_obs)
 
     # ------------------------------------------------------------------

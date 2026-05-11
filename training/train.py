@@ -185,7 +185,14 @@ def run_training(
         env.save(vecnorm_path)
         print(f"\nModel saved        → {model_path}.zip")
         print(f"VecNormalize stats → {vecnorm_path}")
-        env.close()
+        # env.close() blocks on remote.recv() waiting for worker confirmation.
+        # A second Ctrl+C during this wait raises another KeyboardInterrupt and
+        # produces an ugly traceback.  Suppress it — the game recovers on its own
+        # within ~2 s when its socket timeout fires.
+        try:
+            env.close()
+        except (KeyboardInterrupt, Exception):
+            pass
 
 
 # ---------------------------------------------------------------------------

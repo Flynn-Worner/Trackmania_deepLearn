@@ -348,19 +348,20 @@ void OnConnect(){
  * Try to bind a specific port.
  * Returns true on success, false if the port is already taken.
  *
- * The try/catch is essential: without it, a failed Listen crashes the plugin.
+ * Net::Socket::Listen() returns bool (true = bound OK, false = port in use).
+ * We MUST check this return value.  A try/catch alone is NOT sufficient
+ * because Listen() signals failure via its return value, not an exception.
+ * Ignoring the return value means every instance silently claims port 8483.
  */
 bool TryBindPort(uint16 p)
 {
-    try {
-        @sock = Net::Socket();
-        sock.Listen(HOST, p);
+    @sock = Net::Socket();
+    if (sock.Listen(HOST, p)) {
         PORT = p;
         return true;
-    } catch {
-        @sock = null;
-        return false;
     }
+    @sock = null;
+    return false;
 }
 
 /**
