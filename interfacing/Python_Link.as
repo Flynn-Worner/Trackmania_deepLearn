@@ -3,25 +3,26 @@
  *
  * Sets up a TCP socket server so Python's TrackmaniaEnv can drive the car.
  *
- * PORT CONFIGURATION (required for multiple parallel TM instances):
+ * =========================================================================
+ * PORT CONFIGURATION FOR MULTIPLE TM INSTANCES
+ * =========================================================================
  *
- *   The port is read from a TMInterface variable "custom_port" so each game
- *   window can listen on a different port without editing this file.
+ * METHOD 1 – AUTO-SCAN (easiest, no configuration needed):
+ *   This plugin automatically tries ports 8483, 8484, 8485 … 8492 and
+ *   binds to the first one that is free.  If you open three TM windows,
+ *   instance 1 gets 8483, instance 2 gets 8484, instance 3 gets 8485.
+ *   Python side: run  python main.py --ports 8483 8484 8485
+ *   NOTE: start ALL TM instances before running main.py, so every port
+ *   is bound before Python tries to connect.
  *
- *   Option A – TMLoader (automated launch, recommended):
- *     When launching via TMLoader pass a configstring:
- *       run TmForever "default" /configstring="set custom_port 8484"
- *     reference_linesight/scripts/train.py demonstrates this.
+ * METHOD 2 – TMLoader configstring (automated launch):
+ *   run TmForever "profile" /configstring="set custom_port 8484"
+ *   See scripts/launch_multienv.ps1 for an automated version.
  *
- *   Option B – Manual launch (default port 8483):
- *     Just load the map.  The plugin defaults to port 8483.
- *     To use a different port, type in the TMInterface console BEFORE the
- *     map loads (i.e. while still in the main menu):
- *       set custom_port 8484
- *     Then load the map.  The plugin reads the variable during Main().
- *
- *   Python side: pass matching ports to TrackmaniaEnv(port=...) and list
- *   them in main.py --ports or training/train.py PORTS.
+ * METHOD 3 – Manual sequential launch (see MULTI_INSTANCE_GUIDE.md):
+ *   Run scripts/launch_multienv.ps1, which patches the port, launches
+ *   TM, waits, then repeats for each instance.
+ * =========================================================================
  */
 
 Net::Socket@ sock = null;
@@ -349,25 +350,70 @@ void OnConnect(){
  * Called after the CommandList processes "queue_processed".
  * By this point RegisterVariable has run, so GetVariableDouble returns the
  * value set by /configstring (auto-launch) or by the user in the console.
+ * Only used when custom_port was explicitly set to non-zero.
  */
 void OnQueueProcessed(int fromTime, int toTime, const string&in commandLine, const array<string>&in args)
 {
-    PORT = uint16(GetVariableDouble("custom_port"));
-    log("Port set to " + PORT);
-    Init_Socket();
+    double cfg = GetVariableDouble("custom_port");
+    if (cfg > 0) {
+        PORT = uint16(cfg);
+        log("Port set from custom_port variable: " + PORT);
+        Init_Socket();
+    }
+    // If cfg == 0, Main() falls through to the auto-scan below.
+}
+
+/**
+ * Try to bind a specific port.  Returns true on success, false if the port
+ * is already in use by another TM instance or another application.
+ */
+bool TryBindPort(uint16 p)
+{
+    try {
+        @sock = Net::Socket();
+        sock.Listen(HOST, p);
+        PORT = p;
+        return true;
+    } catch {
+        @sock = null;
+        return false;
+    }
 }
 
 void Main()
 {
-    // Default port 8483.  Override before map load by running in TMInterface
-    // console:  set custom_port 8484
-    // Or via TMLoader configstring:  /configstring="set custom_port 8484"
-    RegisterVariable("custom_port", 8483);
+    // Register the variable so TMLoader configstrings can override it.
+    // Default 0 means "auto-scan".
+    RegisterVariable("custom_port", 0);
     RegisterCustomCommand("queue_processed", "Internal command", OnQueueProcessed);
 
     CommandList cmdList;
     cmdList.Content = "queue_processed";
     cmdList.Process();
+
+    // If a configstring already set custom_port the socket is already bound.
+    if (@sock !is null) {
+        return;
+    }
+
+    // AUTO-SCAN: try ports 8483–8492 in order and bind to the first free one.
+    // Each TM instance will claim the next available port, so:
+    //   Instance 1 → 8483, Instance 2 → 8484, Instance 3 → 8485, …
+    // Start all TM windows before running main.py.
+    bool bound = false;
+    for (uint16 p = 8483; p <= 8492; p++) {
+        if (TryBindPort(p)) {
+            log("Python Link: auto-bound to port " + PORT);
+            bound = true;
+            break;
+        }
+        log("Port " + p + " in use, trying next...");
+    }
+
+    if (!bound) {
+        log("Python Link ERROR: could not bind to any port in 8483-8492. "
+            "Close other applications using those ports.");
+    }
 }
 
 void OnGameStateChanged(TM::GameState state){

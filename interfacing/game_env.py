@@ -1,14 +1,35 @@
-import time
+"""
+Gymnasium environment for Trackmania Nations Forever via TMInterface sockets.
+
+Spawn strategies used in reset():
+  1. State-history rewind  (40% when ≥100 states saved)
+     Rewinds physics to a real recorded state → preserves exact speed +
+     orientation so the agent sees diverse situations from its own history.
+
+  2. Random-TP + warm-up   (40%, curriculum-gated by history size)
+     Uses TMInterface commands:
+       execute_command("tp X Y Z")    – teleport car to random track block
+       set_speed(N)                   – run physics at N× while accelerating
+                                        to build varied initial speeds cheaply
+     set_speed is the simulation-speed multiplier (e.g. 5 = 5× real-time).
+     It is NOT the car velocity; the car accelerates naturally under gas.
+     After warm-up, set_speed(1) restores real-time for the episode.
+
+  3. Start-line restart     (remaining 20%, always available as fallback)
+     give_up() restarts race from the start block at zero speed.
+"""
+
 import random
+import math
+import json
+import os
+import sys
+
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from .tminterface2 import TMInterface, MessageType
 
-import sys
-import os
-import json
-import math
+from .tminterface2 import TMInterface, MessageType
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_processing.features import StateNormalizer
@@ -16,21 +37,24 @@ from data_processing.features import StateNormalizer
 
 class TrackmaniaEnv(gym.Env):
     """
-    Gymnasium environment for Trackmania Nations Forever via TMInterface sockets.
+    Custom Gymnasium environment for TMNF.
 
-    Observation space (6 floats, pre-scaled to roughly [-1, 1] before VecNormalize):
-        [speed_norm, dist_to_center_norm, yaw_norm, pitch_norm, roll_norm, checkpoints_norm]
+    Observation space (6 floats, pre-scaled to ≈[-1,1] before VecNormalize):
+        [speed_norm, dist_to_center_norm, yaw_norm, pitch_norm, roll_norm,
+         checkpoints_norm]
 
-    Action space (continuous Box(3,) in [-1, 1]):
+    Action space – continuous Box(3,) in [-1, 1]:
         [steer, gas, brake]
-        - steer  : linearly mapped to TM integer range [-65536, 65536]
-        - gas    : binary threshold at 0 (> 0 → accelerate)
-        - brake  : binary threshold at 0 (> 0 → brake)
-        Gas/brake are binary because TM's SetInputState API does not support
-        analog throttle/brake magnitudes.
+        steer  : mapped linearly to TM integer range [-65536, 65536]
+        gas    : > 0 → accelerate  (binary; game API limitation)
+        brake  : > 0 → brake        (binary; game API limitation)
     """
 
     metadata = {"render_modes": ["human"]}
+
+    # Warm-up speed multiplier used during tp-spawn acceleration phase.
+    # 5× means the car reaches driving speed ~5× faster in wall-clock time.
+    WARMUP_SPEED_MULT = 5.0
 
     def __init__(self, port: int = 8483, ticks_per_step: int = 25):
         super().__init__()
@@ -39,13 +63,15 @@ class TrackmaniaEnv(gym.Env):
         self.ticks_per_step = ticks_per_step
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32
+        )
 
         # ------------------------------------------------------------------
         # Load and path-sort map blocks
         # ------------------------------------------------------------------
-        self.map_blocks = []    # ordered list of block dicts
-        self.arc_lengths = []   # cumulative metres along path for each block
+        self.map_blocks = []
+        self.arc_lengths = []
 
         blocks_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)), "data", "map_blocks.json"
@@ -53,19 +79,17 @@ class TrackmaniaEnv(gym.Env):
         if os.path.exists(blocks_path):
             with open(blocks_path, "r") as f:
                 raw_blocks = json.load(f)
-
             self.map_blocks = self._sort_blocks(raw_blocks)
             self.arc_lengths = self._compute_arc_lengths(self.map_blocks)
+            total_m = self.arc_lengths[-1] if self.arc_lengths else 0.0
             print(
-                f"[Port {self.port}] Loaded {len(self.map_blocks)} map blocks, "
-                f"total arc length {self.arc_lengths[-1]:.0f} m"
-                if self.arc_lengths else f"[Port {self.port}] Loaded 0 map blocks"
+                f"[Port {self.port}] {len(self.map_blocks)} map blocks loaded, "
+                f"arc length ≈ {total_m:.0f} m"
             )
         else:
-            print(f"[Port {self.port}] WARNING: data/map_blocks.json not found – "
-                  "run extract_spline.py first.")
+            print(f"[Port {self.port}] WARNING: data/map_blocks.json not found. "
+                  "Run extract_spline.py first.")
 
-        # Track how far along the path we've reached (arc-length in metres)
         self.highest_arc_length = 0.0
         self.state_history = []
 
@@ -79,15 +103,12 @@ class TrackmaniaEnv(gym.Env):
         self.normalizer = StateNormalizer()
 
     # ------------------------------------------------------------------
-    # Path helpers
+    # Path helpers (identical to extract_spline.py logic so the in-memory
+    # sorted list matches what's written to disk)
     # ------------------------------------------------------------------
 
     @staticmethod
     def _sort_blocks(raw_blocks):
-        """
-        Return blocks in track order: start block first, finish block last,
-        road blocks in between via greedy nearest-neighbour in 2-D (X-Z).
-        """
         if not raw_blocks:
             return []
 
@@ -95,10 +116,10 @@ class TrackmaniaEnv(gym.Env):
             return "start" in b["name"].lower()
 
         def is_finish(b):
-            return "finish" in b["name"].lower()
+            return "finish" in b["name"].lower() and "start" not in b["name"].lower()
 
         starts = [b for b in raw_blocks if is_start(b)]
-        finishes = [b for b in raw_blocks if is_finish(b) and not is_start(b)]
+        finishes = [b for b in raw_blocks if is_finish(b)]
         middles = [b for b in raw_blocks if not is_start(b) and not is_finish(b)]
 
         if not starts:
@@ -106,8 +127,7 @@ class TrackmaniaEnv(gym.Env):
             middles = raw_blocks[1:]
 
         ordered = [starts[0]]
-        remaining = middles + (finishes if finishes else [])
-
+        remaining = middles + starts[1:]
         while remaining:
             last = ordered[-1]["world_center"]
             best_i, best_d = 0, float("inf")
@@ -118,17 +138,12 @@ class TrackmaniaEnv(gym.Env):
                     best_d, best_i = d, i
             ordered.append(remaining.pop(best_i))
 
-        # If finishes were mixed into remaining they sort naturally; if a finish
-        # block ended up in the middle (rare), move it to the end.
-        finish_indices = [i for i, b in enumerate(ordered) if is_finish(b) and i != len(ordered) - 1]
-        for i in sorted(finish_indices, reverse=True):
-            ordered.append(ordered.pop(i))
-
+        # Re-append finish block(s) at the end
+        ordered.extend(finishes)
         return ordered
 
     @staticmethod
     def _compute_arc_lengths(blocks):
-        """Cumulative 3-D Euclidean distance along the sorted block list."""
         if not blocks:
             return []
         arc = [0.0]
@@ -144,7 +159,6 @@ class TrackmaniaEnv(gym.Env):
         return arc
 
     def _closest_block_idx(self, pos):
-        """Return the index of the nearest block in the sorted path."""
         min_dist = float("inf")
         closest_idx = 0
         for i, b in enumerate(self.map_blocks):
@@ -159,25 +173,28 @@ class TrackmaniaEnv(gym.Env):
                 closest_idx = i
         return closest_idx, min_dist
 
+    def _update_highest_arc_from_state(self, state):
+        if not self.map_blocks:
+            return
+        idx, _ = self._closest_block_idx(state.position)
+        self.highest_arc_length = self.arc_lengths[idx]
+
     # ------------------------------------------------------------------
     # Observation
     # ------------------------------------------------------------------
 
     def _get_observation(self, state):
         """
-        Build a normalised 6-float observation vector.
+        Build a normalised 6-float observation.
+        Each feature is pre-scaled to ≈[-1,1]/[0,1] before the StateNormalizer
+        clip so VecNormalize's running statistics start in a sensible range.
 
-        Each feature is scaled into roughly [-1, 1] / [0, 1] before being
-        passed to StateNormalizer (which clips to [-5, 5]).  This gives
-        VecNormalize's running-statistics a sensible starting range.
-
-        Features:
-          0  speed_norm           speed / 300          (0 → 1 at 300 km/h)
-          1  dist_to_center_norm  dist / 50            (0 → 1 at 50 m off track)
-          2  yaw_norm             yaw  / π             (-1 → 1)
-          3  pitch_norm           pitch / π            (-1 → 1)
-          4  roll_norm            roll  / π            (-1 → 1)
-          5  checkpoints_norm     n_checkpoints / 20   (0 → 1 for most maps)
+          0  speed / 300          (0 → 1 at 300 km/h)
+          1  dist_to_center / 50  (0 → 1 at 50 m off track)
+          2  yaw  / π             (-1 → 1)
+          3  pitch / π            (-1 → 1)
+          4  roll  / π            (-1 → 1)
+          5  checkpoints / 20     (0 → 1 for most maps)
         """
         speed = state.display_speed
         pos = state.position
@@ -205,12 +222,10 @@ class TrackmaniaEnv(gym.Env):
 
     def _apply_action(self, action):
         """
-        Map continuous action array to TMInterface inputs.
+        Map a continuous [-1,1]³ action to TMInterface inputs.
 
-        Steering is fully continuous: the float in [-1, 1] maps linearly to
-        the integer range [-65536, 65536] that TM uses internally.
-        Gas and brake are binary because TM's SetInputState only accepts 0/1
-        for those inputs.
+        Steering is fully continuous: [-1, 1] → [-65536, 65536] (integer).
+        Gas/brake are binary because TM's SetInputState only accepts 0/1.
         """
         steer = int(np.clip(float(action[0]), -1.0, 1.0) * 65536)
         accelerate = bool(float(action[1]) > 0.0)
@@ -250,10 +265,9 @@ class TrackmaniaEnv(gym.Env):
 
         terminated = False
         truncated = False
-        # IMPORTANT: reward is accumulated across ALL messages that belong to
-        # this single env step.  Previously the speed-reward line used `=`
-        # (assignment) which wiped any checkpoint bonus collected earlier in
-        # the same while-loop iteration.
+        # Reward is accumulated (+= throughout), never reset mid-loop.
+        # This prevents earlier checkpoint bonuses from being wiped by the
+        # speed term that follows.
         reward = 0.0
 
         while True:
@@ -263,13 +277,7 @@ class TrackmaniaEnv(gym.Env):
                 _time = self.iface._read_int32()
                 state = self.iface.get_simulation_state()
 
-                # -------------------------------------------------------
-                # REWARD
-                # -------------------------------------------------------
-
-                # 1. Speed reward – linear in speed (not quadratic) so it
-                #    doesn't completely dominate the progress signal.
-                #    Reference: ~1.0 reward per step at 150 km/h.
+                # 1. Speed reward – linear so it does not dwarf other signals.
                 speed_factor = state.display_speed / 150.0
                 reward += speed_factor * 1.0
 
@@ -278,45 +286,40 @@ class TrackmaniaEnv(gym.Env):
                     pos = state.position
                     closest_idx, dist_to_center = self._closest_block_idx(pos)
 
-                    # 2. Arc-length progress reward.
-                    #    Award the net increase in metres along the path since
-                    #    the episode start.  Scale: ~0.5 reward per 32 m block.
+                    # 2. Arc-length progress reward (metres advanced this step).
                     current_arc = self.arc_lengths[closest_idx]
                     if current_arc > self.highest_arc_length:
-                        progress_m = current_arc - self.highest_arc_length
-                        reward += progress_m * 0.015
+                        reward += (current_arc - self.highest_arc_length) * 0.015
                         self.highest_arc_length = current_arc
 
-                    # 3. Gentle centerline nudge – does not overpower speed.
+                    # 3. Mild centerline nudge.
                     reward -= dist_to_center * 0.001
 
-                    # 4. Per-step time penalty to prefer finishing quickly.
+                    # 4. Per-step time penalty.
                     reward -= 0.005
 
-                    # 5. Out-of-bounds: fell off elevated track.
+                    # 5. Fell off elevated track.
                     if pos[1] < 20.0:
                         reward -= 10.0
                         terminated = True
 
-                # 6. Crash: large sudden speed drop.
+                # 6. Crash: sudden large speed loss.
                 speed_drop = self.previous_speed - state.display_speed
                 if speed_drop > 50.0:
                     reward -= 10.0
                     terminated = True
 
-                # 7. Stuck: near-zero speed for too long.
+                # 7. Stuck at near-zero speed.
                 if state.display_speed < 10.0:
                     self.consecutive_stuck_steps += 1
                 else:
                     self.consecutive_stuck_steps = 0
-
                 if self.consecutive_stuck_steps >= 50:
                     reward -= 10.0
                     terminated = True
 
                 self.previous_speed = state.display_speed
 
-                # Save state for random-spawn curriculum.
                 if not terminated and state.display_speed > 20.0 and dist_to_center < 15.0:
                     if len(self.state_history) < 10000 and random.random() < 0.1:
                         self.state_history.append(state)
@@ -330,10 +333,7 @@ class TrackmaniaEnv(gym.Env):
                 current = self.iface._read_int32()
                 target = self.iface._read_int32()
 
-                # Checkpoint bonus – accumulated into `reward` (not overwritten
-                # later because the run-step branch now uses +=).
                 reward += 20.0
-
                 if current == target:
                     terminated = True
                     reward += 50.0
@@ -347,29 +347,116 @@ class TrackmaniaEnv(gym.Env):
         return obs, reward, terminated, truncated, {}
 
     # ------------------------------------------------------------------
+    # Spawn helpers
+    # ------------------------------------------------------------------
+
+    def _consume_one_run_step(self):
+        """Block until the next SC_RUN_STEP_SYNC and return the SimStateData."""
+        while True:
+            mt = self.iface._read_int32()
+            if mt == int(MessageType.SC_RUN_STEP_SYNC):
+                self.iface._read_int32()           # discard race time
+                state = self.iface.get_simulation_state()
+                self.iface._respond_to_call(mt)
+                return state
+            else:
+                self.iface._respond_to_call(mt)
+
+    def _tp_warmup_spawn(self, n_history: int) -> "SimStateData":
+        """
+        Teleport the car to a random block along the centreline and accelerate
+        it for a random number of steps so the episode begins with varied speed.
+
+        TMInterface commands used:
+          tp X Y Z   – teleports car to world coordinates (via execute_command)
+          set_speed  – simulation-speed multiplier for fast warm-up
+                       (equivalent to 'set speed N' in the TMInterface console)
+
+        Curriculum: `n_history` gates how far along the track we may spawn.
+        With no history the car always spawns at or near the start.  As history
+        fills up (max ~2000 entries) the spawn window expands to 60% of the
+        track length.
+        """
+        n_blocks = len(self.map_blocks)
+        # Expand spawn window as the agent accumulates experience
+        progress_ratio = min(n_history / 2000.0, 1.0)
+        max_idx = max(0, int((n_blocks - 1) * 0.6 * progress_ratio))
+        spawn_idx = random.randint(0, max_idx) if max_idx > 0 else 0
+
+        block = self.map_blocks[spawn_idx]
+        x = block["world_center"]["x"]
+        # Lift 1.5 m above block centre so the car doesn't clip through the
+        # road surface (blocks are measured to their geometric centre, not top).
+        y = block["world_center"]["y"] + 1.5
+        z = block["world_center"]["z"]
+
+        # Teleport: 'tp X Y Z' is a standard TMInterface console command.
+        self.iface.execute_command(f"tp {x:.3f} {y:.3f} {z:.3f}")
+
+        # Warm-up steps: 1–25 steps (minimum 1 so physics processes the tp).
+        # At the default ticks_per_step=25 (≈10 Hz) this gives ≈0.1–2.5 s of
+        # acceleration, producing initial speeds of roughly 5–75 km/h.
+        warmup_steps = random.randint(1, 25)
+
+        # Run physics at WARMUP_SPEED_MULT× so warm-up is cheap wall-clock time.
+        # Equivalent to typing 'set speed 5' in the TMInterface console.
+        self.iface.set_speed(self.WARMUP_SPEED_MULT)
+
+        state = None
+        for _ in range(warmup_steps):
+            # Full gas, no steering so the car accelerates straight ahead.
+            self.iface.set_input_state(accelerate=True, brake=False, steer=0)
+            state = self._consume_one_run_step()
+
+        # Restore real-time for the episode.
+        self.iface.set_speed(1.0)
+        return state
+
+    # ------------------------------------------------------------------
     # Reset
     # ------------------------------------------------------------------
 
-    def _update_highest_arc_from_state(self, state):
-        if not self.map_blocks:
-            return
-        idx, _ = self._closest_block_idx(state.position)
-        self.highest_arc_length = self.arc_lengths[idx]
-
     def reset(self, seed=None, options=None):
+        """
+        Three spawn strategies, chosen probabilistically each episode:
+
+          40%  State-history rewind  – fast recovery to a real past position.
+               Requires ≥100 saved states; falls through to tp-spawn otherwise.
+
+          40%  TP + warm-up spawn    – teleport to a random track block then
+               accelerate for a random number of steps to give varied speed.
+               Requires map_blocks to be loaded.
+
+          20%  Start-line restart   – standard give_up(), always available.
+        """
         super().reset(seed=seed)
         if not self.connected:
             self.connect()
 
-        is_random_spawn = len(self.state_history) > 100 and random.random() < 0.5
-        if is_random_spawn:
-            self.iface.rewind_to_state(random.choice(self.state_history))
-        else:
-            self.iface.give_up()
+        n_hist = len(self.state_history)
+        roll = random.random()
+        use_history = n_hist > 100 and roll < 0.40
+        use_tp = self.map_blocks and (not use_history) and roll < 0.80
 
+        if use_history:
+            # ----------------------------------------------------------------
+            # Strategy 1: rewind to a random preserved state
+            # ----------------------------------------------------------------
+            self.iface.rewind_to_state(random.choice(self.state_history))
+            state = self._consume_one_run_step()
+            self._update_highest_arc_from_state(state)
+            self.previous_speed = state.display_speed
+            self.consecutive_stuck_steps = 0
+            obs = self._get_observation(state)
+            self.current_state = state
+            return obs, {}
+
+        # Both tp-spawn and start-line need the race to restart first.
+        self.iface.give_up()
+
+        # Wait for the race timer to reset (time == 0 or a backwards jump).
         first_frame = True
         prev_time = -1
-
         while True:
             msgtype = self.iface._read_int32()
             if msgtype == int(MessageType.SC_RUN_STEP_SYNC):
@@ -377,39 +464,35 @@ class TrackmaniaEnv(gym.Env):
                 state = self.iface.get_simulation_state()
                 self.iface._respond_to_call(msgtype)
 
-                if _time == 0:
-                    obs = self._get_observation(state)
-                    self.current_state = state
-                    self.previous_speed = 0.0
-                    self.consecutive_stuck_steps = 0
-                    self.highest_arc_length = 0.0
-                    break
-
-                if is_random_spawn and first_frame:
-                    obs = self._get_observation(state)
-                    self.current_state = state
-                    self.previous_speed = state.display_speed
-                    self.consecutive_stuck_steps = 0
-                    self._update_highest_arc_from_state(state)
-                    break
-
                 if first_frame:
                     prev_time = _time
                     first_frame = False
                     continue
 
-                if _time > 0 and _time < prev_time - 100:
-                    obs = self._get_observation(state)
-                    self.current_state = state
-                    self.previous_speed = 0.0
-                    self.consecutive_stuck_steps = 0
-                    self.highest_arc_length = 0.0
+                race_restarted = (_time == 0) or (_time > 0 and _time < prev_time - 100)
+                if race_restarted:
                     break
-
                 prev_time = _time
             else:
                 self.iface._respond_to_call(msgtype)
 
+        if use_tp:
+            # ----------------------------------------------------------------
+            # Strategy 2: teleport to a random block + warm-up
+            # ----------------------------------------------------------------
+            state = self._tp_warmup_spawn(n_hist)
+            self._update_highest_arc_from_state(state)
+            self.previous_speed = state.display_speed
+        else:
+            # ----------------------------------------------------------------
+            # Strategy 3: start from the start line
+            # ----------------------------------------------------------------
+            self.highest_arc_length = 0.0
+            self.previous_speed = 0.0
+
+        self.consecutive_stuck_steps = 0
+        obs = self._get_observation(state)
+        self.current_state = state
         return obs, {}
 
     # ------------------------------------------------------------------
