@@ -6,13 +6,23 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from interfacing.game_env import TrackmaniaEnv
 from stable_baselines3 import PPO
-from stable_baselines3.common.env_checker import check_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
+
+def make_env(port):
+    """Utility function to create an environment for a specific port."""
+    def _init():
+        return TrackmaniaEnv(port=port)
+    return _init
 
 def main():
-    print("Initializing environment...")
+    # LIST OF PORTS: You must open a Trackmania window and TMInterface for EACH of these ports.
+    # We are reverting back to 1 instance to avoid connection issues.
+    PORTS = [8483]
     
-    # We use a lower ticks_per_step (10 = 10 updates a second) 
-    env = TrackmaniaEnv(port=8483)
+    print(f"Initializing {len(PORTS)} parallel environments...")
+    
+    # Wrap multiple environments in parallel processes
+    env = SubprocVecEnv([make_env(p) for p in PORTS])
     
     print("Skipping check_env as it can crash synchronous game environments...")
     
@@ -32,7 +42,7 @@ def main():
             learning_rate=0.0003, 
             n_steps=2048, 
             batch_size=64,
-            ent_coef=0.05,
+            ent_coef=0.01,
             tensorboard_log="./tensorboard/"
         )
     

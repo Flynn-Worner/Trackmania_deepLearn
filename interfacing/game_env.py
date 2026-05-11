@@ -1,4 +1,5 @@
 import time
+import random
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -25,8 +26,12 @@ class TrackmaniaEnv(gym.Env):
         self.ticks_per_step = ticks_per_step # Number of engine ticks per RL action (10 = 10Hz)
         
         # Action space: Discrete actions for driving
-        # 0: Do nothing, 1: Accelerate, 2: Brake, 3: Left, 4: Right, 5: Accel+Left, 6: Accel+Right
-        self.action_space = spaces.Discrete(7)
+        # Action space: Continuous actions for driving
+        # [steer, gas, brake]
+        # steer: -1.0 (left) to +1.0 (right)
+        # gas: -1.0 to +1.0 (> 0 is accelerate)
+        # brake: -1.0 to +1.0 (> 0 is brake)
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
         
         # We removed Absolute GPS Coordinates (X,Y,Z).
         # We added Distance to Centerline.
@@ -71,6 +76,7 @@ class TrackmaniaEnv(gym.Env):
             print("WARNING: map_blocks.json not found! Centerline tracking will not work.")
             
         self.highest_block_idx = 0
+        self.state_history = []
         
         self.iface = TMInterface(self.port)
         self.connected = False
@@ -140,18 +146,19 @@ class TrackmaniaEnv(gym.Env):
         return self.normalizer.normalize(raw_obs)
 
     def _apply_action(self, action):
-        """Maps our discrete action integer to trackmania inputs."""
-        # Defaults
-        left, right, accelerate, brake = False, False, False, False
+        """Maps our continuous action array to trackmania inputs."""
+        steer_float = float(action[0])
+        gas_float = float(action[1])
+        brake_float = float(action[2])
         
-        if action == 1: accelerate = True
-        elif action == 2: brake = True
-        elif action == 3: left = True
-        elif action == 4: right = True
-        elif action == 5: accelerate = True; left = True
-        elif action == 6: accelerate = True; right = True
+        # Accelerate and Brake are still binary in the game, so we threshold at 0.0
+        accelerate = bool(gas_float > 0.0)
+        brake = bool(brake_float > 0.0)
+        
+        # Steer is an integer from -65536 to 65536
+        steer = int(np.clip(steer_float, -1.0, 1.0) * 65536)
             
-        self.iface.set_input_state(left=left, right=right, accelerate=accelerate, brake=brake)
+        self.iface.set_input_state(accelerate=accelerate, brake=brake, steer=steer)
 
     def step(self, action):
         if not self.connected:
@@ -180,9 +187,11 @@ class TrackmaniaEnv(gym.Env):
                 # REWARD SYSTEM
                 # ==========================================
                 
-                # 1. Base Reward: Speed is KING! We must massively reward moving!
-                # 100 km/h = +2.0 reward per frame.
-                reward = state.display_speed * 0.02 
+                # 1. Base Reward: Speed is KING! We massively reward high speeds.
+                # The reward scales exponentially: going 200km/h gives 4x the reward of 100km/h!
+                # This ensures the AI pushes for the absolute maximum "real speed".
+                speed_factor = state.display_speed / 100.0
+                reward = (speed_factor ** 2) * 2.0  
                 
                 dist_to_center = 0.0
                 if self.map_blocks:
@@ -208,27 +217,25 @@ class TrackmaniaEnv(gym.Env):
                     # We reward the AI specifically for pushing further down the path!
                     if closest_idx > self.highest_block_idx:
                         progress_blocks = closest_idx - self.highest_block_idx
-                        reward += progress_blocks * 5.0  # Massive +5.0 reward for breaking new ground!
+                        reward += progress_blocks * 30  # Massive +5.0 reward for breaking new ground!
                         self.highest_block_idx = closest_idx
                         
                     # 3. Continuous Spline Penalty
                     # We make this penalty extremely tiny compared to the speed reward.
                     # We just want to gently 'nudge' the car, not terrify it into holding the brake.
                     # e.g., 10m away = -0.05 penalty.
-                    reward -= dist_to_center * 0.005
+                    reward -= dist_to_center * 0.0001
                     
                     # 4. Marginal Step Penalty (Time Penalty)
                     # This gently bleeds points to encourage the AI to finish the race quickly 
                     # rather than driving in circles to farm speed points.
-                    reward -= 0.1
+                    reward -= 0.02
                     
                     # 5. Out of Bounds Detection!
-                    # Trackmania blocks are 32m wide. The absolute farthest corner is 22.6m away. 
-                    # If 3D distance > 24m, the car has completely fallen off the snake track!
-                    if dist_to_center > 24.0:
+                    # The track floor is at 26m. If the car drops below 23m, it fell off!
+                    if pos[1] < 20.0:
                         reward -= 50.0
                         terminated = True
-                        print(f"Fell off! 3D Dist to center: {dist_to_center:.1f}m")
                 
                 # 3. Crash Penalty: Detect massive speed loss (hitting a wall)
                 speed_drop = self.previous_speed - state.display_speed
@@ -249,6 +256,11 @@ class TrackmaniaEnv(gym.Env):
                 
                 self.previous_speed = state.display_speed
                 # ==========================================
+                
+                # Save state for random respawning, only if we are moving forward and not falling off
+                if not terminated and state.display_speed > 20.0 and dist_to_center < 15.0:
+                    if len(self.state_history) < 10000 and random.random() < 0.1:
+                        self.state_history.append(state)
                 
                 self.current_state = state
                 self.iface._respond_to_call(msgtype)
@@ -276,13 +288,36 @@ class TrackmaniaEnv(gym.Env):
         info = {}
         return obs, reward, terminated, truncated, info
 
+    def _update_highest_block_idx(self, state):
+        if not self.map_blocks:
+            return
+        pos = state.position
+        min_dist = float('inf')
+        closest_idx = 0
+        
+        for i, b in enumerate(self.map_blocks):
+            center = b["world_center"]
+            dist = math.sqrt((pos[0] - center["x"])**2 + (pos[1] - center["y"])**2 + (pos[2] - center["z"])**2)
+            if dist < min_dist:
+                min_dist = dist
+                closest_idx = i
+                
+        self.highest_block_idx = closest_idx
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         if not self.connected:
             self.connect()
             
-        # Give up to reset the car to the starting line
-        self.iface.give_up()
+        # 50% chance to give up (start from beginning), 50% chance to rewind to a random historical state
+        is_random_spawn = False
+        if len(self.state_history) > 100 and random.random() < 0.5:
+            random_state = random.choice(self.state_history)
+            self.iface.rewind_to_state(random_state)
+            is_random_spawn = True
+        else:
+            # Give up to reset the car to the starting line
+            self.iface.give_up()
         
         # Wait for the game to process the reset.
         first_frame = True
@@ -303,6 +338,15 @@ class TrackmaniaEnv(gym.Env):
                     self.previous_speed = 0.0
                     self.consecutive_stuck_steps = 0
                     self.highest_block_idx = 0
+                    break
+                    
+                # If we did a random spawn, we can just take the very next frame as our reset observation
+                if is_random_spawn and first_frame:
+                    obs = self._get_observation(state)
+                    self.current_state = state
+                    self.previous_speed = state.display_speed
+                    self.consecutive_stuck_steps = 0
+                    self._update_highest_block_idx(state)
                     break
                 
                 # On the very first frame, we just record the time and wait.

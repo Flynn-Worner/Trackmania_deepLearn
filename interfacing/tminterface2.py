@@ -89,10 +89,11 @@ class TMInterface:
         state.cp_data.resize(CheckpointData.cp_times_field, state.cp_data.cp_times_length)
         return state
 
-    def set_input_state(self, left: bool, right: bool, accelerate: bool, brake: bool):
-        self.sock.sendall(
-            struct.pack("iBBBB", MessageType.C_SET_INPUT_STATE, np.uint8(left), np.uint8(right), np.uint8(accelerate), np.uint8(brake))
-        )
+    def set_input_state(self, accelerate: bool, brake: bool, steer: int):
+        self.sock.sendall(struct.pack("i", MessageType.C_SET_INPUT_STATE))
+        self.sock.sendall(struct.pack("B", np.uint8(accelerate)))
+        self.sock.sendall(struct.pack("B", np.uint8(brake)))
+        self.sock.sendall(struct.pack("i", np.int32(steer)))
 
     def give_up(self):
         self.sock.sendall(struct.pack("i", MessageType.C_GIVE_UP))
