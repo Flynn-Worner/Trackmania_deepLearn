@@ -6,9 +6,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 
-from interfacing.game_env import TrackmaniaEnv
+from interfacing.env import TrackmaniaEnv
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,50 @@ class TrainingMetricsCallback(BaseCallback):
             self.logger.dump(self.num_timesteps)
 
         return True
+
+
+class AutoSaveCallback(BaseCallback):
+    """
+    Saves the model and VecNormalize stats every `save_freq` episodes.
+    Keeps both a rolling 'latest' checkpoint and periodic numbered snapshots.
+    """
+
+    def __init__(self, save_freq_episodes: int = 50, model_path: str = "",
+                 verbose: int = 1):
+        super().__init__(verbose)
+        self.save_freq = save_freq_episodes
+        self.model_path = model_path
+        self._ep_count = 0
+        self._last_save_ep = 0
+
+    def _on_step(self) -> bool:
+        dones = self.locals.get("dones", [])
+        self._ep_count += int(sum(dones))
+
+        if self._ep_count - self._last_save_ep >= self.save_freq:
+            self._last_save_ep = self._ep_count
+            self._save_checkpoint()
+        return True
+
+    def _save_checkpoint(self):
+        # Save 'latest' (always overwritten)
+        self.model.save(self.model_path)
+        # Save VecNormalize stats if available
+        env = self.model.get_env()
+        if hasattr(env, "save"):
+            env.save(self.model_path + "_vecnorm.pkl")
+
+        # Also keep a numbered snapshot every 200 episodes
+        if self._ep_count % 200 == 0:
+            snap = f"{self.model_path}_ep{self._ep_count}"
+            self.model.save(snap)
+            if hasattr(env, "save"):
+                env.save(snap + "_vecnorm.pkl")
+            if self.verbose:
+                print(f"\n💾 Snapshot saved → {snap}.zip (ep {self._ep_count})")
+
+        if self.verbose:
+            print(f"\n💾 Auto-save → {self.model_path}.zip (ep {self._ep_count})")
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +180,7 @@ def run_training(
             env,
             verbose=1,
             # Learning rate: small but stable for noisy game envs.
-            learning_rate=3e-4,
+            learning_rate=0.0003,
             # n_steps: collect this many steps per env before each update.
             # 128 in debug makes TB feel alive; 2048 is standard production.
             n_steps=n_steps,
@@ -155,13 +199,19 @@ def run_training(
             tensorboard_log=tensorboard_dir,
         )
 
-    callback = TrainingMetricsCallback(log_freq=log_freq)
+    metrics_cb = TrainingMetricsCallback(log_freq=log_freq)
+    autosave_cb = AutoSaveCallback(
+        save_freq_episodes=50,
+        model_path=model_path,
+    )
+    callback = CallbackList([metrics_cb, autosave_cb])
 
     print()
     print("=" * 56)
     print("  TRAINING STARTED  (Ctrl+C to stop and save)")
     print(f"  n_steps per env : {n_steps}")
     print(f"  batch_size      : {batch_size}")
+    print(f"  Auto-save every : 50 episodes")
     print(f"  TensorBoard dir : {tensorboard_dir}")
     print("=" * 56)
     print()

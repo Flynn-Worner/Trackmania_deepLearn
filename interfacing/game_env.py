@@ -1,5 +1,9 @@
 """
-Gymnasium environment for Trackmania Nations Forever via TMInterface sockets.
+LEGACY — Gymnasium environment for Trackmania Nations Forever via TMInterface sockets.
+
+NOTE: This file is DEPRECATED.  Training now uses interfacing/env.py with the
+gate-based reward system (data/gates.json).  This file is preserved for
+reference only.  Do not import from training code.
 
 Simulation speed
 ----------------
@@ -107,7 +111,7 @@ class TrackmaniaEnv(gym.Env):
         if os.path.exists(blocks_path):
             with open(blocks_path, "r") as f:
                 raw_blocks = json.load(f)
-            self.map_blocks = self._sort_blocks(raw_blocks)
+            self.map_blocks = raw_blocks
             # Insert face-midpoints so the path closely follows the road
             # even through curves (details in _build_path_points docstring).
             self.path_points = self._build_path_points(self.map_blocks)
