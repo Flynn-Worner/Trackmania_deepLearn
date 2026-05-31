@@ -1,0 +1,131 @@
+TMNF Setup Guide (Beginner Friendly)
+====================================
+
+This guide explains how to set up:
+1. Trackmania Nations Forever (Steam version)
+2. The TMNF plugin files from your downloaded zip
+3. A custom map
+4. This AIR project for recording/training/testing
+
+
+Part 1 - Install TMNF (Steam)
+-----------------------------
+1. Install "Trackmania Nations Forever" from Steam.
+2. Launch the game once, then close it.
+	 This creates the base game folders and profile files.
+
+
+Part 2 - Copy Plugin/Zip Files Into TMNF
+----------------------------------------
+You said you already downloaded the plugin zip and copied files across.
+For someone setting up from scratch:
+
+1. Extract the plugin zip off donadigo
+2. Open your TMNF install folder from Steam.
+3. Copy the extracted plugin files/folders into the TMNF game folder.
+4. If Windows asks to merge/replace files, accept merge/replace for plugin files.
+5. Launch TMNF and confirm the plugin appears/loads.
+
+6. Once it opens it should say modded at the top, this is how you know it worked.
+7. Go into the options by clicking ` this will open up the menu go down to pluggins and select create new.
+8. Navigate to this pluggin folder and copy the entire telemetry.as file content into this 
+9. Once that is complete press enable back in the tmnf option menu and this set up the link across platforms.
+
+10. Whenever running any of the files which require communication between vs code and tmnf you must reenable when prompted in terminal.
+
+
+Important:
+- The Python recorder/trainer waits for telemetry on port 9000 by default. This may need to change based on your computer.
+- If plugin and Python use different ports, connection will fail.
+
+
+Part 3 - Import a Custom Map
+----------------------------
+1. Find your TMNF Tracks/Challenges folder.
+2. Copy the custom map from the folder into the correct folder for local tracks.
+3. Start TMNF.
+4. Open Local/Single Player and load the custom map.
+5. Drive the map once to confirm it works.
+
+
+Part 4 - Python Project Setup
+-----------------------------
+From this project folder:
+
+	C:\Users\ryang\OneDrive\Desktop\UNI\2026\AIR\Assignment 1\AIR_A1_Code_Ryan
+
+1. Open PowerShell in this folder.
+2. Activate the virtual environment:
+
+	 .\.venv\Scripts\Activate.ps1
+
+3. If needed, install dependencies (only once):
+
+	 pip install -r requirements.txt
+
+
+Part 5 - Record Waypoints
+-------------------------
+You have two modes:
+
+Normal recording (overwrites main waypoints):
+	.\.venv\Scripts\python.exe .\main.py --record --port 9000 --spacing 10
+
+
+Notes:
+- Start TMNF and load the map before running recorder, or immediately after.
+- Drive manually.
+- Press Ctrl+C in terminal to stop and save.
+
+Outputs:
+- Normal: data\waypoints.json
+- Draft:  data\waypoints_draft.json
+
+
+Part 6 - Generate Gates
+-----------------------
+From normal waypoints:
+	.\.venv\Scripts\python.exe .\generate_gates.py
+
+From draft waypoints (for demo/testing only):
+	.\.venv\Scripts\python.exe .\generate_gates.py --input .\data\waypoints_draft.json --output .\data\gates_draft.json
+
+
+Part 7 - Train and Test
+-----------------------
+Train:
+	.\.venv\Scripts\python.exe .\main.py --port 9000 --timesteps 200000 --new
+
+Test model:
+	.\.venv\Scripts\python.exe .\test_gate_model.py --model-path models/tmnf_ppo_final.zip --episodes 5 --port 9000
+
+
+
+Troubleshooting
+---------------
+1. "Timed out waiting for telemetry.as connection"
+	 - Plugin is not loaded, wrong port, or TMNF was not ready.
+	 - Check plugin is running and using port 9000.
+	 - Restart recorder command.
+
+2. Recorder runs but does not save
+	 - You must press Ctrl+C to end recording cleanly.
+	 - If no movement happened, it may save no points.
+
+3. Training says gates.json missing
+	 - Record waypoints first, then run generate_gates.py.
+
+4. Wrong Python version issues
+	 - Use the project venv executable explicitly:
+		 .\.venv\Scripts\python.exe
+
+
+Quick Beginner Checklist
+------------------------
+[ ] TMNF installed and launched once
+[ ] Plugin zip extracted and copied into TMNF folder
+[ ] Custom map imported and loadable in game
+[ ] Python venv activated
+[ ] Draft waypoint recording works
+[ ] Gates generated
+[ ] Training/test commands run
