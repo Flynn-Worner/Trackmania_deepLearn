@@ -1,19 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trackmania AI | Deep Reinforcement Learning</title>
     <meta name="description" content="An autonomous racing agent driving in Trackmania Nations Forever using PPO.">
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
     <!-- Styles -->
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
 
     <!-- Background Elements -->
@@ -29,7 +33,8 @@
                 <a href="#architecture">Architecture</a>
                 <a href="#results">Results</a>
                 <a href="#installation">Get Started</a>
-                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" class="btn btn-outline" target="_blank" rel="noopener noreferrer">
+                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" class="btn btn-outline" target="_blank"
+                    rel="noopener noreferrer">
                     View on GitHub
                 </a>
             </div>
@@ -39,19 +44,27 @@
     <!-- Hero Section -->
     <header class="hero" id="home">
         <div class="container hero-content fade-in-up">
-            <div class="hero-badge">PPO Agent | Group 13</div>
+            <div class="hero-badge">41118 Artificial Intelligence in Robotics | Group 13</div>
             <h1 class="hero-title">Teaching AI to Master <br><span class="text-gradient">Trackmania</span></h1>
             <p class="hero-subtitle">
-                An autonomous racing agent built with Deep Reinforcement Learning. It learns to navigate custom tracks by interpreting its velocity, orientation, and distance to dynamically generated gates.
+                An autonomous racing agent built with Deep Reinforcement Learning. It learns to navigate custom tracks
+                by interpreting its velocity, orientation, and distance to dynamically generated gates.
             </p>
             <div class="hero-actions">
                 <a href="#architecture" class="btn btn-primary">How it Works</a>
-                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" class="btn btn-secondary" target="_blank">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" class="btn btn-secondary"
+                    target="_blank">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                    </svg>
                     GitHub Repo
                 </a>
                 <a href="#" class="btn btn-outline" target="_blank" title="Video coming soon!">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
+                    </svg>
                     Watch Video
                 </a>
             </div>
@@ -63,9 +76,13 @@
         <div class="container">
             <div class="section-header fade-in">
                 <h2>System Architecture</h2>
-                <p>The agent interacts with the game engine via a custom Python Gym environment. It uses the TMInterface plugin to inject inputs directly into Trackmania Nations Forever over a TCP socket. The Proximal Policy Optimization (PPO) neural network takes the current car state (velocity, angle, and distance to target) as input, calculates the optimal action based on previous training, and outputs continuous steering, gas, and brake values to drive the car.</p>
+                <p>The agent interacts with the game engine via a custom Python Gym environment. It uses the TMInterface
+                    plugin to inject inputs directly into Trackmania Nations Forever over a TCP socket. The Proximal
+                    Policy Optimization (PPO) neural network takes the current car state (velocity, angle, and distance
+                    to target) as input, calculates the optimal action based on previous training, and outputs
+                    continuous steering, gas, and brake values to drive the car.</p>
             </div>
-            
+
             <div class="architecture-grid">
                 <!-- Diagram Card -->
                 <div class="glass-card diagram-card fade-in-left">
@@ -95,7 +112,8 @@
                 <!-- Gate System Card -->
                 <div class="glass-card gate-card fade-in-right">
                     <h3>The Gate System</h3>
-                    <p>Instead of wandering aimlessly, we record an ideal racing line as waypoints. These are converted into invisible, perpendicular gates the bot must cross in sequence.</p>
+                    <p>Instead of wandering aimlessly, we record an ideal racing line as waypoints. These are converted
+                        into invisible, perpendicular gates the bot must cross in sequence.</p>
                     <div class="gate-visual">
                         <div class="track-wall"></div>
                         <div class="gate">
@@ -124,29 +142,48 @@
         <div class="container">
             <div class="section-header fade-in">
                 <h2>Best Run Results</h2>
-                <p>Watch the autonomous agent complete the track using the optimal racing line it learned over thousands of iterations.</p>
+                <p>Watch the autonomous agent complete the track using the optimal racing line it learned over thousands
+                    of iterations.</p>
             </div>
-            <div class="video-container glass-card fade-in-up" style="padding: 1rem; text-align: center; max-width: 900px; margin: 0 auto;">
-                <iframe width="100%" height="500" src="https://www.youtube.com/embed/snd-KlXuelQ" title="Trackmania AI Best Run" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="border-radius: 12px;"></iframe>
+            <div class="video-container glass-card fade-in-up"
+                style="padding: 1rem; text-align: center; max-width: 900px; margin: 0 auto;">
+                <iframe width="100%" height="500" src="https://www.youtube.com/embed/snd-KlXuelQ"
+                    title="Trackmania AI Best Run" frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen style="border-radius: 12px;"></iframe>
             </div>
 
             <!-- Results Discussion -->
             <div class="architecture-grid" style="margin-top: 4rem;">
                 <div class="glass-card fade-in-left">
                     <h3>Training & Strategy Insights</h3>
-                    <p>We successfully implemented <strong>multi-instancing</strong>, which effectively doubled our training speed and the total number of episodes we could process. Over the course of the project, the agent completed approximately <strong>40,000 episodes</strong>.</p>
-                    <p style="margin-top: 1rem;">While the model achieved convergence, it ultimately developed an inferior driving strategy. Instead of braking optimally, the agent learned that <strong>wall-tapping</strong> to reduce speed was the most effective way to slow down and make tight corners. We explored multiple paths for adjusting the reward structure and map interpretation to discourage this behavior, which are fully detailed in our system breakdown video.</p>
-                    <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-left: 4px solid var(--accent-primary); border-radius: 4px;">
-                        <strong style="color: var(--text-main); font-size: 1.1rem;">Quickest Lap Time:</strong> <span style="color: var(--accent-primary); font-weight: bold; font-size: 1.1rem;">51 Seconds</span>
+                    <p>We successfully implemented <strong>multi-instancing</strong>, which effectively doubled our
+                        training speed and the total number of episodes we could process. Over the course of the
+                        project, the agent completed approximately <strong>40,000 episodes</strong>.</p>
+                    <p style="margin-top: 1rem;">While the model achieved convergence, it ultimately developed an
+                        inferior driving strategy. Instead of braking optimally, the agent learned that
+                        <strong>wall-tapping</strong> to reduce speed was the most effective way to slow down and make
+                        tight corners. We explored multiple paths for adjusting the reward structure and map
+                        interpretation to discourage this behavior, which are fully detailed in our system breakdown
+                        video.</p>
+                    <div
+                        style="margin-top: 1.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-left: 4px solid var(--accent-primary); border-radius: 4px;">
+                        <strong style="color: var(--text-main); font-size: 1.1rem;">Quickest Lap Time:</strong> <span
+                            style="color: var(--accent-primary); font-weight: bold; font-size: 1.1rem;">51
+                            Seconds</span>
                     </div>
                 </div>
 
                 <div class="glass-card fade-in-right">
                     <h3>Training Metrics</h3>
-                    <p style="margin-bottom: 1rem;">The TensorBoard graph below illustrates the agent's learning progression and reward accumulation over the 40,000 episodes.</p>
-                    <div style="width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-glass-light);">
+                    <p style="margin-bottom: 1rem;">The TensorBoard graph below illustrates the agent's learning
+                        progression and reward accumulation over the 40,000 episodes.</p>
+                    <div
+                        style="width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-glass-light);">
                         <!-- Make sure to place your screenshot as 'tensorboard.png' in the docs folder! -->
-                        <img src="tensorboard.png" alt="TensorBoard Training Graph" style="width: 100%; height: auto; display: block;" onerror="this.src='https://placehold.co/600x380/10141f/3b82f6?text=TensorBoard+Screenshot';">
+                        <img src="tensorboard.png" alt="TensorBoard Training Graph"
+                            style="width: 100%; height: auto; display: block;"
+                            onerror="this.src='https://placehold.co/600x380/10141f/3b82f6?text=TensorBoard+Screenshot';">
                     </div>
                 </div>
             </div>
@@ -165,7 +202,9 @@
                 <div class="step-card glass-card fade-in-up">
                     <div class="step-number">01</div>
                     <h3>Setup Game & Interface</h3>
-                    <p>Install Trackmania Nations Forever from Steam, and inject the <a href="https://donadigo.com/tminterface/" target="_blank" class="text-link">TMInterface plugin</a>.</p>
+                    <p>Install Trackmania Nations Forever from Steam, and inject the <a
+                            href="https://donadigo.com/tminterface/" target="_blank" class="text-link">TMInterface
+                            plugin</a>.</p>
                 </div>
 
                 <div class="step-card glass-card fade-in-up" style="transition-delay: 100ms;">
@@ -174,7 +213,8 @@
                     <div class="code-block">
                         <div class="code-header">
                             <span>bash</span>
-                            <button class="copy-btn" data-clipboard="git clone https://github.com/Flynn-Worner/Trackmania_deepLearn.git&#10;cd Trackmania_deepLearn&#10;python -m venv .venv&#10;.venv\Scripts\activate&#10;pip install -r requirements.txt">Copy</button>
+                            <button class="copy-btn"
+                                data-clipboard="git clone https://github.com/Flynn-Worner/Trackmania_deepLearn.git&#10;cd Trackmania_deepLearn&#10;python -m venv .venv&#10;.venv\Scripts\activate&#10;pip install -r requirements.txt">Copy</button>
                         </div>
                         <pre><code>git clone https://github.com/Flynn-Worner/Trackmania_deepLearn.git
 cd Trackmania_deepLearn
@@ -191,7 +231,8 @@ pip install -r requirements.txt</code></pre>
                     <div class="code-block">
                         <div class="code-header">
                             <span>bash</span>
-                            <button class="copy-btn" data-clipboard="python main.py --ports 8483 --timesteps 5000000">Copy</button>
+                            <button class="copy-btn"
+                                data-clipboard="python main.py --ports 8483 --timesteps 5000000">Copy</button>
                         </div>
                         <pre><code>python main.py --ports 8483 --timesteps 5000000</code></pre>
                     </div>
@@ -209,11 +250,13 @@ pip install -r requirements.txt</code></pre>
             </div>
             <div class="footer-credit">
                 <p>Group 13: Flynn Worner & Ryan Gleeson</p>
-                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" target="_blank" class="text-link">View Repository</a>
+                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" target="_blank" class="text-link">View
+                    Repository</a>
             </div>
         </div>
     </footer>
 
     <script src="script.js"></script>
 </body>
+
 </html>
