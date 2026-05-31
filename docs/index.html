@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trackmania AI | Deep Reinforcement Learning</title>
+    <meta name="description" content="An autonomous racing agent driving in Trackmania Nations Forever using PPO.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Background Elements -->
+    <div class="bg-gradient-sphere hidden-mobile"></div>
+    <div class="grid-overlay"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <div class="logo">TM<span>AI</span></div>
+            <div class="nav-links">
+                <a href="#about">About</a>
+                <a href="#architecture">Architecture</a>
+                <a href="#installation">Get Started</a>
+                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" class="btn btn-outline" target="_blank" rel="noopener noreferrer">
+                    View on GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero" id="home">
+        <div class="container hero-content fade-in-up">
+            <div class="hero-badge">PPO Agent | Group 13</div>
+            <h1 class="hero-title">Teaching AI to Master <br><span class="text-gradient">Trackmania</span></h1>
+            <p class="hero-subtitle">
+                An autonomous racing agent built with Deep Reinforcement Learning. It learns to navigate custom tracks by interpreting its velocity, orientation, and distance to dynamically generated gates.
+            </p>
+            <div class="hero-actions">
+                <a href="#architecture" class="btn btn-primary">How it Works</a>
+                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" class="btn btn-secondary" target="_blank">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    GitHub Repo
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- Architecture Section -->
+    <section id="architecture" class="section">
+        <div class="container">
+            <div class="section-header fade-in">
+                <h2>System Architecture</h2>
+                <p>The agent interacts with the game engine via a custom Python Gym environment and the TMInterface plugin.</p>
+            </div>
+            
+            <div class="architecture-grid">
+                <!-- Diagram Card -->
+                <div class="glass-card diagram-card fade-in-left">
+                    <h3>Environment Flow</h3>
+                    <div class="flow-diagram">
+                        <div class="diagram-node agent">
+                            <div class="icon">🧠</div>
+                            <span>PPO Neural Net</span>
+                        </div>
+                        <div class="diagram-arrows">
+                            <div class="arrow-container down">
+                                <span class="arrow-label">Action Space (Steer, Gas, Brake)</span>
+                                <div class="arrow"></div>
+                            </div>
+                            <div class="arrow-container up">
+                                <div class="arrow"></div>
+                                <span class="arrow-label">Observation Space (14 Floats)</span>
+                            </div>
+                        </div>
+                        <div class="diagram-node game">
+                            <div class="icon">🏎️</div>
+                            <span>Trackmania + TMInterface</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gate System Card -->
+                <div class="glass-card gate-card fade-in-right">
+                    <h3>The Gate System</h3>
+                    <p>Instead of wandering aimlessly, we record an ideal racing line as waypoints. These are converted into invisible, perpendicular gates the bot must cross in sequence.</p>
+                    <div class="gate-visual">
+                        <div class="track-wall"></div>
+                        <div class="gate">
+                            <div class="gate-line"></div>
+                            <span>Gate 1</span>
+                        </div>
+                        <div class="car-path"></div>
+                        <div class="gate">
+                            <div class="gate-line"></div>
+                            <span>Gate 2</span>
+                        </div>
+                        <div class="car-path"></div>
+                        <div class="gate">
+                            <div class="gate-line"></div>
+                            <span>Gate 3</span>
+                        </div>
+                        <div class="track-wall"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section id="installation" class="section bg-darker">
+        <div class="container">
+            <div class="section-header fade-in">
+                <h2>Quick Start</h2>
+                <p>Get up and running with the training environment in minutes.</p>
+            </div>
+
+            <div class="steps-container">
+                <div class="step-card glass-card fade-in-up">
+                    <div class="step-number">01</div>
+                    <h3>Setup Game & Interface</h3>
+                    <p>Install Trackmania Nations Forever from Steam, and inject the <a href="https://donadigo.com/tminterface/" target="_blank" class="text-link">TMInterface plugin</a>.</p>
+                </div>
+
+                <div class="step-card glass-card fade-in-up" style="transition-delay: 100ms;">
+                    <div class="step-number">02</div>
+                    <h3>Clone & Install</h3>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span>bash</span>
+                            <button class="copy-btn" data-clipboard="git clone https://github.com/Flynn-Worner/Trackmania_deepLearn.git&#10;cd Trackmania_deepLearn&#10;python -m venv .venv&#10;.venv\Scripts\activate&#10;pip install -r requirements.txt">Copy</button>
+                        </div>
+                        <pre><code>git clone https://github.com/Flynn-Worner/Trackmania_deepLearn.git
+cd Trackmania_deepLearn
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt</code></pre>
+                    </div>
+                </div>
+
+                <div class="step-card glass-card fade-in-up" style="transition-delay: 200ms;">
+                    <div class="step-number">03</div>
+                    <h3>Train the Model</h3>
+                    <p>Ensure the game is open and running TMInterface on port 8483.</p>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <span>bash</span>
+                            <button class="copy-btn" data-clipboard="python main.py --ports 8483 --timesteps 5000000">Copy</button>
+                        </div>
+                        <pre><code>python main.py --ports 8483 --timesteps 5000000</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container footer-content">
+            <div class="footer-info">
+                <div class="logo">TM<span>AI</span></div>
+                <p>An autonomous racing agent utilizing Proximal Policy Optimization.</p>
+            </div>
+            <div class="footer-credit">
+                <p>Group 13: Flynn Worner & Ryan Gleeson</p>
+                <a href="https://github.com/Flynn-Worner/Trackmania_deepLearn" target="_blank" class="text-link">View Repository</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
