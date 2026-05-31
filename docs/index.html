@@ -129,6 +129,27 @@
             <div class="video-container glass-card fade-in-up" style="padding: 1rem; text-align: center; max-width: 900px; margin: 0 auto;">
                 <iframe width="100%" height="500" src="https://www.youtube.com/embed/snd-KlXuelQ" title="Trackmania AI Best Run" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="border-radius: 12px;"></iframe>
             </div>
+
+            <!-- Results Discussion -->
+            <div class="architecture-grid" style="margin-top: 4rem;">
+                <div class="glass-card fade-in-left">
+                    <h3>Training & Strategy Insights</h3>
+                    <p>We successfully implemented <strong>multi-instancing</strong>, which effectively doubled our training speed and the total number of episodes we could process. Over the course of the project, the agent completed approximately <strong>40,000 episodes</strong>.</p>
+                    <p style="margin-top: 1rem;">While the model achieved convergence, it ultimately developed an inferior driving strategy. Instead of braking optimally, the agent learned that <strong>wall-tapping</strong> to reduce speed was the most effective way to slow down and make tight corners. We explored multiple paths for adjusting the reward structure and map interpretation to discourage this behavior, which are fully detailed in our system breakdown video.</p>
+                    <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-left: 4px solid var(--accent-primary); border-radius: 4px;">
+                        <strong style="color: var(--text-main); font-size: 1.1rem;">Quickest Lap Time:</strong> <span style="color: var(--accent-primary); font-weight: bold; font-size: 1.1rem;">51 Seconds</span>
+                    </div>
+                </div>
+
+                <div class="glass-card fade-in-right">
+                    <h3>Training Metrics</h3>
+                    <p style="margin-bottom: 1rem;">The TensorBoard graph below illustrates the agent's learning progression and reward accumulation over the 40,000 episodes.</p>
+                    <div style="width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-glass-light);">
+                        <!-- Make sure to place your screenshot as 'tensorboard.png' in the docs folder! -->
+                        <img src="tensorboard.png" alt="TensorBoard Training Graph" style="width: 100%; height: auto; display: block;" onerror="this.src='https://placehold.co/600x380/10141f/3b82f6?text=TensorBoard+Screenshot';">
+                    </div>
+                </div>
+            </div>
         </div>
     </section>
 
